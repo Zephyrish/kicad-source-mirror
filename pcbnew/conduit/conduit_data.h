@@ -11,6 +11,8 @@
 #include <vector>
 #include <wx/string.h>
 
+#include <kiid.h>
+
 
 enum class CONDUIT_TYPE
 {
@@ -33,13 +35,19 @@ wxString ConduitTypeToString( CONDUIT_TYPE aType );
 class CABLE
 {
 public:
-    CABLE( const wxString& aName ) :
+    /// aNetCode: positive int = the BOARD's net code (stable within a session,
+    /// allows surviving net renames). -1 = not linked to a board net.
+    CABLE( const wxString& aName, int aNetCode = -1 ) :
         m_name( aName ),
+        m_netCode( aNetCode ),
         m_areaMm2( 0.0 )
     {}
 
     const wxString& GetName() const { return m_name; }
     void SetName( const wxString& aName ) { m_name = aName; }
+
+    int  GetNetCode() const { return m_netCode; }
+    void SetNetCode( int aCode ) { m_netCode = aCode; }
 
     const wxString& GetSource() const { return m_source; }
     void SetSource( const wxString& aSource ) { m_source = aSource; }
@@ -51,11 +59,24 @@ public:
     double GetAreaMm2() const { return m_areaMm2; }
     void   SetAreaMm2( double aArea ) { m_areaMm2 = aArea; }
 
+    /// Pad UUIDs that were on this net when last synced.
+    /// This is the truly-stable identity: when a net is renamed, KiCad assigns a
+    /// new net code, but the pads stay the same. We use pad-set overlap to re-find
+    /// a renamed net.
+    const std::vector<KIID>& GetPadIds() const { return m_padIds; }
+    void SetPadIds( std::vector<KIID> aIds ) { m_padIds = std::move( aIds ); }
+
+    bool IsOrphan() const { return m_orphan; }
+    void SetOrphan( bool aOrphan ) { m_orphan = aOrphan; }
+
 private:
-    wxString m_name;
-    wxString m_source;
-    wxString m_destination;
-    double   m_areaMm2;
+    wxString          m_name;
+    int               m_netCode;
+    wxString          m_source;
+    wxString          m_destination;
+    double            m_areaMm2;
+    std::vector<KIID> m_padIds;
+    bool              m_orphan = false;   // true if last sync couldn't find the net
 };
 
 
