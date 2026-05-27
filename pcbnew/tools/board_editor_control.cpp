@@ -2276,7 +2276,15 @@ int BOARD_EDITOR_CONTROL::ConduitTest( const TOOL_EVENT& aEvent )
                     wxWindow::FindWindowByName( CONDUIT_SCHEMATIC_FRAME_NAME ) );
 
     if( !conduitFrame )
-        conduitFrame = new CONDUIT_SCHEMATIC_FRAME( &editFrame->Kiway(), editFrame );
+    {
+        conduitFrame = new CONDUIT_SCHEMATIC_FRAME( &editFrame->Kiway(), editFrame,
+                                                    editFrame->GetBoard() );
+    }
+    else
+    {
+        // Refresh cables in case the schematic/PCB nets have changed since last open.
+        conduitFrame->RefreshFromBoard();
+    }
 
     if( conduitFrame->IsIconized() )
         conduitFrame->Iconize( false );
