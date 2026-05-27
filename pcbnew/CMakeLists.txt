@@ -420,6 +420,7 @@ set( PCBNEW_CLASS_SRCS
     pcb_layer_box_selector.cpp
     conduit_schematic_frame.cpp
     conduit/conduit_data.cpp
+    conduit/conduit_canvas_panel.cpp
     pcb_edit_frame.cpp
     pcb_plotter.cpp
     pcbnew_config.cpp
