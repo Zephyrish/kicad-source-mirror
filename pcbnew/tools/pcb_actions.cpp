@@ -2276,6 +2276,13 @@ TOOL_ACTION PCB_ACTIONS::repairFootprint( TOOL_ACTION_ARGS()
         .Tooltip( _( "Run various diagnostics and attempt to repair footprint" ) )
         .Icon( BITMAPS::rescue ) );
 
+// Conduit system (experimental)
+TOOL_ACTION PCB_ACTIONS::conduitTest( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.Control.conduitTest" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Conduit: Test" ) )
+        .Tooltip( _( "Test that the conduit system is loaded" ) ) );
+
 
 // PLACEMENT_TOOL
 //

@@ -582,6 +582,9 @@ public:
     static TOOL_ACTION boardStatistics;
     static TOOL_ACTION boardReannotate;
     static TOOL_ACTION repairBoard;
+
+    // Conduit system (experimental)
+    static TOOL_ACTION conduitTest;
     static TOOL_ACTION repairFootprint;
     static TOOL_ACTION inspectClearance;
     static TOOL_ACTION inspectConstraints;

@@ -432,6 +432,10 @@ void PCB_EDIT_FRAME::doReCreateMenuBar()
     toolsMenu->Add( PCB_ACTIONS::boardReannotate );
     toolsMenu->Add( ACTIONS::updateSchematicFromPcb )->Enable( !Kiface().IsSingle() );
 
+    // Conduit system (experimental)
+    toolsMenu->AppendSeparator();
+    toolsMenu->Add( PCB_ACTIONS::conduitTest );
+
     ACTION_MENU* multichannelSubmenu = new ACTION_MENU( false, selTool );
     multichannelSubmenu->SetTitle( _( "Multi-Channel" ) );
     multichannelSubmenu->SetIcon( BITMAPS::mode_module );

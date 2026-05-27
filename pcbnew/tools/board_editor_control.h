@@ -89,6 +89,9 @@ public:
     int GenerateODBPPFiles( const TOOL_EVENT& aEvent );
     int RepairBoard( const TOOL_EVENT& aEvent );
 
+    // Conduit system (experimental)
+    int ConduitTest( const TOOL_EVENT& aEvent );
+
     int UpdatePCBFromSchematic( const TOOL_EVENT& aEvent );
     int UpdateSchematicFromPCB( const TOOL_EVENT& aEvent );
     int ShowEeschema( const TOOL_EVENT& aEvent );

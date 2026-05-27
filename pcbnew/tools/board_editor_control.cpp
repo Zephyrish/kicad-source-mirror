@@ -2266,6 +2266,13 @@ int BOARD_EDITOR_CONTROL::DrillOrigin( const TOOL_EVENT& aEvent )
 }
 
 
+int BOARD_EDITOR_CONTROL::ConduitTest( const TOOL_EVENT& aEvent )
+{
+    wxMessageBox( "Conduit system loaded!", "Conduit Test", wxOK | wxICON_INFORMATION );
+    return 0;
+}
+
+
 void BOARD_EDITOR_CONTROL::setTransitions()
 {
     Go( &BOARD_EDITOR_CONTROL::New,                    ACTIONS::doNew.MakeEvent() );
@@ -2356,6 +2363,7 @@ void BOARD_EDITOR_CONTROL::setTransitions()
     Go( &BOARD_EDITOR_CONTROL::ToggleLibraryTree,      PCB_ACTIONS::showDesignBlockPanel.MakeEvent() );
     Go( &BOARD_EDITOR_CONTROL::ToggleSearch,           PCB_ACTIONS::showSearch.MakeEvent() );
     Go( &BOARD_EDITOR_CONTROL::RepairBoard,            PCB_ACTIONS::repairBoard.MakeEvent() );
+    Go( &BOARD_EDITOR_CONTROL::ConduitTest,            PCB_ACTIONS::conduitTest.MakeEvent() );
     // Line modes: explicit, next, and notification
     Go( &BOARD_EDITOR_CONTROL::ChangeLineMode,        PCB_ACTIONS::lineModeFree.MakeEvent() );
     Go( &BOARD_EDITOR_CONTROL::ChangeLineMode,        PCB_ACTIONS::lineMode90.MakeEvent() );
