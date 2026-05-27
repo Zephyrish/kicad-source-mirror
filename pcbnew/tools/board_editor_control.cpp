@@ -2273,7 +2273,7 @@ int BOARD_EDITOR_CONTROL::ConduitTest( const TOOL_EVENT& aEvent )
 
     CONDUIT_SCHEMATIC_FRAME* conduitFrame =
             dynamic_cast<CONDUIT_SCHEMATIC_FRAME*>(
-                    editFrame->Kiway().Player( FRAME_CONDUIT_SCHEMATIC, false ) );
+                    wxWindow::FindWindowByName( CONDUIT_SCHEMATIC_FRAME_NAME ) );
 
     if( !conduitFrame )
         conduitFrame = new CONDUIT_SCHEMATIC_FRAME( &editFrame->Kiway(), editFrame );
@@ -2283,6 +2283,9 @@ int BOARD_EDITOR_CONTROL::ConduitTest( const TOOL_EVENT& aEvent )
 
     conduitFrame->Raise();
     conduitFrame->Show( true );
+
+    if( wxWindow::FindFocus() != conduitFrame )
+        conduitFrame->SetFocus();
 
     return 0;
 }
