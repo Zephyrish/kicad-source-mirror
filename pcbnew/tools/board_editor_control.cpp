@@ -24,6 +24,7 @@
  */
 
 #include "board_editor_control.h"
+#include <conduit_schematic_frame.h>
 
 #include <algorithm>
 #include <climits>
@@ -2268,7 +2269,21 @@ int BOARD_EDITOR_CONTROL::DrillOrigin( const TOOL_EVENT& aEvent )
 
 int BOARD_EDITOR_CONTROL::ConduitTest( const TOOL_EVENT& aEvent )
 {
-    wxMessageBox( "Conduit system loaded!", "Conduit Test", wxOK | wxICON_INFORMATION );
+    PCB_EDIT_FRAME* editFrame = getEditFrame<PCB_EDIT_FRAME>();
+
+    CONDUIT_SCHEMATIC_FRAME* conduitFrame =
+            dynamic_cast<CONDUIT_SCHEMATIC_FRAME*>(
+                    editFrame->Kiway().Player( FRAME_CONDUIT_SCHEMATIC, false ) );
+
+    if( !conduitFrame )
+        conduitFrame = new CONDUIT_SCHEMATIC_FRAME( &editFrame->Kiway(), editFrame );
+
+    if( conduitFrame->IsIconized() )
+        conduitFrame->Iconize( false );
+
+    conduitFrame->Raise();
+    conduitFrame->Show( true );
+
     return 0;
 }
 

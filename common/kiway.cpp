@@ -357,6 +357,7 @@ KIWAY::FACE_T KIWAY::KifaceType( FRAME_T aFrameType )
     case FRAME_FOOTPRINT_CHOOSER:
     case FRAME_FOOTPRINT_WIZARD:
     case FRAME_PCB_DISPLAY3D:
+    case FRAME_CONDUIT_SCHEMATIC:
         return FACE_PCB;
 
     case FRAME_CVPCB:

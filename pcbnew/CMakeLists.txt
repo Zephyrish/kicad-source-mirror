@@ -418,6 +418,7 @@ set( PCBNEW_CLASS_SRCS
     pcb_base_edit_frame.cpp
     pcb_design_block_utils.cpp
     pcb_layer_box_selector.cpp
+    conduit_schematic_frame.cpp
     pcb_edit_frame.cpp
     pcb_plotter.cpp
     pcbnew_config.cpp
