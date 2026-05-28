@@ -161,7 +161,7 @@ void PCB_EDIT_FRAME::doReCreateMenuBar()
     fileMenu->Add( ACTIONS::plot );
 
     fileMenu->AppendSeparator();
-    fileMenu->AddQuitOrClose( &Kiface(), _( "PCB Editor" ) );
+    fileMenu->AddQuitOrClose( &Kiface(), _( "Site Layout Editor" ) );
 
     //-- Edit menu -----------------------------------------------------------
     //

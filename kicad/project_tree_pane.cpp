@@ -2557,7 +2557,7 @@ void PROJECT_TREE_PANE::onGitCommit( wxCommandEvent& aEvent )
 
         const DirtyEditor candidates[] = {
             { FRAME_SCH, MAIL_SCH_SAVE, _( "Schematic Editor" ) },
-            { FRAME_PCB_EDITOR, MAIL_PCB_SAVE, _( "PCB Editor" ) },
+            { FRAME_PCB_EDITOR, MAIL_PCB_SAVE, _( "Site Layout Editor" ) },
         };
 
         std::vector<const DirtyEditor*> dirty;
@@ -2832,7 +2832,7 @@ void PROJECT_TREE_PANE::onGitAmendCommit( wxCommandEvent& aEvent )
 
         const DirtyEditor candidates[] = {
             { FRAME_SCH, MAIL_SCH_SAVE, _( "Schematic Editor" ) },
-            { FRAME_PCB_EDITOR, MAIL_PCB_SAVE, _( "PCB Editor" ) },
+            { FRAME_PCB_EDITOR, MAIL_PCB_SAVE, _( "Site Layout Editor" ) },
         };
 
         std::vector<const DirtyEditor*> dirty;

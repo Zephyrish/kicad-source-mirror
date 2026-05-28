@@ -198,7 +198,8 @@ END_EVENT_TABLE()
 
 
 PCB_EDIT_FRAME::PCB_EDIT_FRAME( KIWAY* aKiway, wxWindow* aParent ) :
-        PCB_BASE_EDIT_FRAME( aKiway, aParent, FRAME_PCB_EDITOR, _( "PCB Editor" ), wxDefaultPosition, wxDefaultSize,
+        PCB_BASE_EDIT_FRAME( aKiway, aParent, FRAME_PCB_EDITOR, _( "Site Layout Editor" ),
+                             wxDefaultPosition, wxDefaultSize,
                              KICAD_DEFAULT_DRAWFRAME_STYLE, PCB_EDIT_FRAME_NAME ),
         m_exportNetlistAction( nullptr ),
         m_findDialog( nullptr ),
@@ -230,7 +231,7 @@ PCB_EDIT_FRAME::PCB_EDIT_FRAME( KIWAY* aKiway, wxWindow* aParent ) :
     // assume dirty
     m_ZoneFillsDirty = true;
 
-    m_aboutTitle = _HKI( "KiCad PCB Editor" );
+    m_aboutTitle = _HKI( "KiCad Site Layout Editor" );
 
     // Must be created before the menus are created.
     if( ADVANCED_CFG::GetCfg().m_ShowPcbnewExportNetlist )
@@ -2241,7 +2242,7 @@ void PCB_EDIT_FRAME::UpdateTitle()
     if( unsaved )
         title += wxS( " " ) + _( "[Unsaved]" );
 
-    title += wxT( " \u2014 " ) + _( "PCB Editor" );
+    title += wxT( " \u2014 " ) + _( "Site Layout Editor" );
 
     SetTitle( title );
 }
