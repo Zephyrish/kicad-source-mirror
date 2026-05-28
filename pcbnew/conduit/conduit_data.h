@@ -55,6 +55,15 @@ public:
     const wxString& GetDestination() const { return m_destination; }
     void SetDestination( const wxString& aDest ) { m_destination = aDest; }
 
+    /// First component (alphabetical) connected to this net.
+    /// Auto-derived from the board on sync.
+    const wxString& GetFromRef() const { return m_fromRef; }
+    void SetFromRef( const wxString& aRef ) { m_fromRef = aRef; }
+
+    /// Last component (alphabetical) connected to this net.
+    const wxString& GetToRef() const { return m_toRef; }
+    void SetToRef( const wxString& aRef ) { m_toRef = aRef; }
+
     /// Cross-sectional area used for conduit-fill calculations (mm^2).
     double GetAreaMm2() const { return m_areaMm2; }
     void   SetAreaMm2( double aArea ) { m_areaMm2 = aArea; }
@@ -74,6 +83,8 @@ private:
     int               m_netCode;
     wxString          m_source;
     wxString          m_destination;
+    wxString          m_fromRef;          // first component (alphabetical) on this net
+    wxString          m_toRef;            // last component (alphabetical) on this net
     double            m_areaMm2;
     std::vector<KIID> m_padIds;
     bool              m_orphan = false;   // true if last sync couldn't find the net
@@ -91,7 +102,9 @@ public:
         m_name( aName ),
         m_type( CONDUIT_TYPE::EMT ),
         m_diameterInches( 2.0 ),
-        m_maxFillPercent( 40.0 )
+        m_maxFillPercent( 40.0 ),
+        m_posX( 50 ),
+        m_posY( 50 )
     {}
 
     const wxString& GetName() const { return m_name; }
@@ -106,6 +119,11 @@ public:
     double GetMaxFillPercent() const { return m_maxFillPercent; }
     void   SetMaxFillPercent( double aPct ) { m_maxFillPercent = aPct; }
 
+    /// Canvas position (virtual coords).
+    int  GetPosX() const { return m_posX; }
+    int  GetPosY() const { return m_posY; }
+    void SetPosition( int aX, int aY ) { m_posX = aX; m_posY = aY; }
+
     const std::vector<CABLE*>& GetCables() const { return m_cables; }
     void AddCable( CABLE* aCable ) { m_cables.push_back( aCable ); }
     void RemoveCable( CABLE* aCable );
@@ -118,6 +136,8 @@ private:
     CONDUIT_TYPE        m_type;
     double              m_diameterInches;
     double              m_maxFillPercent;
+    int                 m_posX;
+    int                 m_posY;
     std::vector<CABLE*> m_cables;   // non-owning: cables live in the project model
 };
 

@@ -36,6 +36,9 @@ public:
 
     wxWindow* GetToolCanvas() const override;
 
+    /// Override EDA_BASE_FRAME's close hook to prompt for unsaved changes.
+    bool canCloseWindow( wxCloseEvent& aCloseEvent ) override;
+
     /// Re-read cables from the source BOARD's net list.
     void RefreshFromBoard();
 
@@ -47,16 +50,28 @@ private:
     void refreshConduitList();
     void refreshCableList();
     void editConduit( CONDUIT* aConduit );
+    void deleteConduit( CONDUIT* aConduit );
 
-    /// Find a CABLE for the given board net code in m_cables, or create one.
-    /// The returned CABLE's name is updated to aCurrentName.
-    CABLE* findOrCreateCable( int aNetCode, const wxString& aCurrentName );
+    /// Find a CABLE for (netCode, fromRef) in m_cables, or create one.
+    /// - For nets with <=2 connected components the cable is "shared": all perspectives
+    ///   resolve to the same CABLE (so assigning either endpoint mirrors).
+    /// - For nets with >=3 connected components ("buses" like GND), each perspective
+    ///   gets its own CABLE so they can be routed through different conduits.
+    CABLE* findOrCreateCable( int aNetCode, const wxString& aFromRef,
+                              const wxString& aCurrentName, const wxString& aToRef );
 
     /// Returns the BOARD net code currently selected in the cable list, or -1.
     int getSelectedNetCode() const;
 
     /// Returns the BOARD net name currently selected in the cable list, or empty.
     wxString getSelectedNetName() const;
+
+    /// Returns the From / To component shown in the currently-selected list row.
+    wxString getSelectedFromRef() const;
+    wxString getSelectedToRef() const;
+
+    /// Number of distinct components connected to a given net code on the board.
+    int countComponentsOnNet( int aNetCode ) const;
 
     /// Walk owned CABLEs and refresh their names from the board (catches net renames).
     void syncCablesFromBoard();
@@ -66,10 +81,30 @@ private:
 
     void assignSelectedCableToSelectedConduit();
 
+    // ---------- Persistence ----------
+    /// Derive the default .kicad_cnd path from the active board's file path.
+    /// Empty string if no board or board is unsaved.
+    wxString deriveDefaultCndPath() const;
+
+    /// Auto-load the .kicad_cnd file for the current board if it exists.
+    void tryAutoLoad();
+
+    bool saveToFile( const wxString& aPath );
+    bool loadFromFile( const wxString& aPath );
+
+    /// Returns true if the file was saved (or the user chose to discard).
+    /// Returns false if the user cancelled.
+    bool promptSaveIfDirty();
+
+    void setDirty( bool aDirty );
+    void updateTitle();
+
     // Event handlers
     void onAddConduit( wxCommandEvent& aEvent );
     void onRefreshCables( wxCommandEvent& aEvent );
     void onAssignCable( wxCommandEvent& aEvent );
+    void onSave( wxCommandEvent& aEvent );
+    void onSaveAs( wxCommandEvent& aEvent );
     void onConduitListActivated( wxListEvent& aEvent );
     void onConduitListSelected( wxListEvent& aEvent );
     void onCableActivated( wxListEvent& aEvent );
@@ -78,8 +113,15 @@ private:
     // Data
     BOARD*                                m_board;       // non-owning
     std::vector<std::unique_ptr<CONDUIT>> m_conduits;
-    std::vector<std::unique_ptr<CABLE>>   m_cables;      // owned, keyed by net name
+    std::vector<std::unique_ptr<CABLE>>   m_cables;
     int                                   m_nextConduitNumber;
+
+    // Persistence state
+    wxString m_filePath;     // current .kicad_cnd path; empty if never saved
+    bool     m_dirty;
+
+    // Session-only "don't ask again" preferences
+    bool m_skipDeleteConfirm = false;
 
     // UI
     wxToolBar*            m_toolBar;
