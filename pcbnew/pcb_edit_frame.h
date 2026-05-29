@@ -125,6 +125,9 @@ public:
      */
     void ExecuteRemoteCommand( const char* cmdline ) override;
 
+    /// Site Layout: open the Conduit Schematic. Called via KIWAY_PLAYER hook.
+    void OpenConduitSchematic() override;
+
     void KiwayMailIn( KIWAY_MAIL_EVENT& aEvent ) override;
 
     /**

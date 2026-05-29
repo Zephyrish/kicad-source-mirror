@@ -172,6 +172,18 @@ public:
      */
     virtual void ExecuteRemoteCommand( const char* cmdline ){}
 
+    /**
+     * Site Layout cross-launch: open the Conduit Schematic window.
+     * Default implementation is a no-op; PCB_EDIT_FRAME overrides it.
+     */
+    virtual void OpenConduitSchematic() {}
+
+    /**
+     * Site Layout cross-launch: open the Cable Specs dialog.
+     * Default no-op; SCH_EDIT_FRAME overrides it.
+     */
+    virtual void OpenCableSpecs() {}
+
 protected:
 
     /// Event handler, routes to derivative specific virtual #KiwayMailIn().

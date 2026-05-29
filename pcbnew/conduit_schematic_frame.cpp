@@ -21,6 +21,11 @@
 #include <netinfo.h>
 #include <pad.h>
 
+#include <project.h>
+#include <project/project_file.h>
+#include <project/net_settings.h>
+#include <netclass.h>
+
 #include <wx/filedlg.h>
 #include <wx/filename.h>
 #include <wx/richmsgdlg.h>
@@ -321,7 +326,15 @@ void CONDUIT_SCHEMATIC_FRAME::refreshConduitList()
         m_conduitListCtrl->SetItem( idx, 1, ConduitTypeToString( c->GetType() ) );
         m_conduitListCtrl->SetItem( idx, 2, wxString::Format( wxT( "%.2f" ), c->GetDiameterInches() ) );
         m_conduitListCtrl->SetItem( idx, 3, wxString::Format( wxT( "%zu" ), c->GetCables().size() ) );
-        m_conduitListCtrl->SetItem( idx, 4, wxString::Format( wxT( "%.1f%%" ), c->ComputeFillPercent() ) );
+        if( c->HasAllCableSizesKnown() )
+        {
+            m_conduitListCtrl->SetItem( idx, 4,
+                wxString::Format( wxT( "%.1f%%" ), c->ComputeFillPercent() ) );
+        }
+        else
+        {
+            m_conduitListCtrl->SetItem( idx, 4, _( "error" ) );
+        }
         m_conduitListCtrl->SetItemData( idx, static_cast<long>( i ) );
     }
 
@@ -465,6 +478,69 @@ void CONDUIT_SCHEMATIC_FRAME::syncCablesFromBoard()
             cable->SetOrphan( true );
             // Keep stale From/To so the engineer can still see what it used to be.
         }
+    }
+
+    // ---- Resolve cable area (mm^2) from the project's Cable Specs ----
+    //
+    // Lookup order:
+    //   1. m_CableSpecsByNet[ "<netName>||<fromRef>" ]   (per-perspective override)
+    //   2. m_CableSpecs[ <netClassName> ]                (per-class default)
+    //   3. Unknown → leave area cleared, conduit fill will show error
+    PROJECT_FILE& proj = Prj().GetProjectFile();
+    std::shared_ptr<NET_SETTINGS> netSettings = proj.NetSettings();
+
+    // Build a map of net name -> class name from NET_SETTINGS (default class as fallback).
+    wxString defaultClassName = wxT( "Default" );
+    if( netSettings )
+    {
+        if( auto def = netSettings->GetDefaultNetclass() )
+        {
+            wxString nm = def->GetName();
+            if( !nm.IsEmpty() )
+                defaultClassName = nm;
+        }
+    }
+
+    auto areaFromOdInches = []( double aOdIn ) -> double
+    {
+        double radiusMm = ( aOdIn * 25.4 ) / 2.0;
+        return M_PI * radiusMm * radiusMm;
+    };
+
+    for( const std::unique_ptr<CABLE>& cable : m_cables )
+    {
+        cable->ClearAreaKnown();
+        const wxString& netName = cable->GetName();
+        if( netName.IsEmpty() )
+            continue;
+
+        // 1. Per-perspective net override
+        wxString key = netName + wxT( "||" ) + cable->GetFromRef();
+        auto it = proj.m_CableSpecsByNet.find( key );
+        if( it != proj.m_CableSpecsByNet.end() && it->second.outer_diameter_in > 0.0 )
+        {
+            cable->SetAreaMm2( areaFromOdInches( it->second.outer_diameter_in ) );
+            continue;
+        }
+
+        // 2. Class-level spec — look up this net's class first
+        wxString className = defaultClassName;
+        if( netSettings )
+        {
+            const auto& assignments = netSettings->GetNetclassLabelAssignments();
+            auto ait = assignments.find( netName );
+            if( ait != assignments.end() && !ait->second.empty() )
+                className = *ait->second.begin();
+        }
+
+        auto cit = proj.m_CableSpecs.find( className );
+        if( cit != proj.m_CableSpecs.end() && cit->second.outer_diameter_in > 0.0 )
+        {
+            cable->SetAreaMm2( areaFromOdInches( cit->second.outer_diameter_in ) );
+            continue;
+        }
+
+        // 3. No spec — leave m_areaKnown == false
     }
 }
 

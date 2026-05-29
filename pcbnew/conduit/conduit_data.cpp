@@ -32,6 +32,17 @@ void CONDUIT::RemoveCable( CABLE* aCable )
 }
 
 
+bool CONDUIT::HasAllCableSizesKnown() const
+{
+    if( m_cables.empty() )
+        return true;     // an empty conduit isn't an "error" case
+    for( const CABLE* c : m_cables )
+        if( !c->IsAreaKnown() )
+            return false;
+    return true;
+}
+
+
 double CONDUIT::ComputeFillPercent() const
 {
     if( m_diameterInches <= 0.0 )

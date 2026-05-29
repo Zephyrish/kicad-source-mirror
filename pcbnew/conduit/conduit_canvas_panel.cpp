@@ -346,6 +346,16 @@ void CONDUIT_CANVAS_PANEL::drawConduit( wxDC& aDC, const CONDUIT* aConduit,
     aDC.SetPen( wxPen( SHEET_FG, 1 ) );
     aDC.DrawLine( aRect.x, footerLineY, aRect.GetRight(), footerLineY );
 
+    aDC.SetFont( wxFont( wxFontInfo( 9 ) ) );
+
+    if( !aConduit->HasAllCableSizesKnown() )
+    {
+        aDC.SetTextForeground( wxColour( 180, 40, 40 ) );
+        aDC.DrawText( _( "Error: cable size not assigned" ),
+                      aRect.x + INNER_PADDING, footerLineY + 4 );
+        return;
+    }
+
     double fillPct = aConduit->ComputeFillPercent();
     double maxFill = std::max( 1.0, aConduit->GetMaxFillPercent() );
     double ratio   = std::min( 1.0, fillPct / maxFill );
@@ -358,7 +368,6 @@ void CONDUIT_CANVAS_PANEL::drawConduit( wxDC& aDC, const CONDUIT* aConduit,
     else
         fillColor = wxColour( 180, 40, 40 );
 
-    aDC.SetFont( wxFont( wxFontInfo( 9 ) ) );
     aDC.SetTextForeground( fillColor );
     aDC.DrawText( wxString::Format( _( "Fill: %.1f%% / %.0f%%" ),
                                     fillPct, aConduit->GetMaxFillPercent() ),

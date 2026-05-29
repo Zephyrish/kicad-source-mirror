@@ -102,6 +102,7 @@ set( EESCHEMA_SCH_IO
 set( EESCHEMA_DLGS
     dialogs/dialog_annotate.cpp
     dialogs/dialog_annotate_base.cpp
+    dialogs/dialog_cable_specs.cpp
     dialogs/dialog_bom.cpp
     dialogs/dialog_bom_base.cpp
     dialogs/dialog_change_symbols.cpp

@@ -25,6 +25,8 @@
 
 #include "board_editor_control.h"
 #include <conduit_schematic_frame.h>
+#include <site_layout/dialog_site_origin.h>
+#include <site_layout/dialog_layer_depths.h>
 
 #include <algorithm>
 #include <climits>
@@ -2267,6 +2269,59 @@ int BOARD_EDITOR_CONTROL::DrillOrigin( const TOOL_EVENT& aEvent )
 }
 
 
+int BOARD_EDITOR_CONTROL::SiteOrigin( const TOOL_EVENT& aEvent )
+{
+    PCB_EDIT_FRAME* editFrame = getEditFrame<PCB_EDIT_FRAME>();
+
+    DIALOG_SITE_ORIGIN dlg( editFrame );
+    if( dlg.ShowModal() == wxID_OK )
+    {
+        // If the user is currently viewing in Global mode, the rotation just changed,
+        // so re-apply it to the GAL.
+        if( editFrame->IsShowingGlobalFrame() )
+            editFrame->SetShowGlobalFrame( true );
+        else
+            editFrame->GetCanvas()->Refresh();
+    }
+
+    return 0;
+}
+
+
+int BOARD_EDITOR_CONTROL::ToggleGlobalFrame( const TOOL_EVENT& aEvent )
+{
+    PCB_EDIT_FRAME* editFrame = getEditFrame<PCB_EDIT_FRAME>();
+    editFrame->SetShowGlobalFrame( !editFrame->IsShowingGlobalFrame() );
+    return 0;
+}
+
+
+int BOARD_EDITOR_CONTROL::LayerDepths( const TOOL_EVENT& aEvent )
+{
+    PCB_EDIT_FRAME* editFrame = getEditFrame<PCB_EDIT_FRAME>();
+
+    DIALOG_LAYER_DEPTHS dlg( editFrame );
+    dlg.ShowModal();
+    return 0;
+}
+
+
+int BOARD_EDITOR_CONTROL::CableSpecsFromPcb( const TOOL_EVENT& aEvent )
+{
+    PCB_EDIT_FRAME* editFrame = getEditFrame<PCB_EDIT_FRAME>();
+
+    // Find/open the schematic editor and forward the request.
+    KIWAY_PLAYER* schFrame = editFrame->Kiway().Player( FRAME_SCH, true );
+    if( !schFrame )
+        return 0;
+
+    schFrame->Show( true );
+    schFrame->Raise();
+    schFrame->OpenCableSpecs();
+    return 0;
+}
+
+
 int BOARD_EDITOR_CONTROL::ConduitTest( const TOOL_EVENT& aEvent )
 {
     PCB_EDIT_FRAME* editFrame = getEditFrame<PCB_EDIT_FRAME>();
@@ -2390,6 +2445,10 @@ void BOARD_EDITOR_CONTROL::setTransitions()
     Go( &BOARD_EDITOR_CONTROL::ToggleSearch,           PCB_ACTIONS::showSearch.MakeEvent() );
     Go( &BOARD_EDITOR_CONTROL::RepairBoard,            PCB_ACTIONS::repairBoard.MakeEvent() );
     Go( &BOARD_EDITOR_CONTROL::ConduitTest,            PCB_ACTIONS::conduitTest.MakeEvent() );
+    Go( &BOARD_EDITOR_CONTROL::CableSpecsFromPcb,      PCB_ACTIONS::cableSpecsFromPcb.MakeEvent() );
+    Go( &BOARD_EDITOR_CONTROL::SiteOrigin,             PCB_ACTIONS::siteOrigin.MakeEvent() );
+    Go( &BOARD_EDITOR_CONTROL::ToggleGlobalFrame,      PCB_ACTIONS::toggleGlobalFrame.MakeEvent() );
+    Go( &BOARD_EDITOR_CONTROL::LayerDepths,            PCB_ACTIONS::layerDepths.MakeEvent() );
     // Line modes: explicit, next, and notification
     Go( &BOARD_EDITOR_CONTROL::ChangeLineMode,        PCB_ACTIONS::lineModeFree.MakeEvent() );
     Go( &BOARD_EDITOR_CONTROL::ChangeLineMode,        PCB_ACTIONS::lineMode90.MakeEvent() );

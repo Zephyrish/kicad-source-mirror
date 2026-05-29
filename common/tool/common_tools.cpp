@@ -615,7 +615,7 @@ int COMMON_TOOLS::GridProperties( const TOOL_EVENT& aEvent )
     {
     case FRAME_SCH:               showGridPrefs( _( "Schematic Editor" ) );     break;
     case FRAME_SCH_SYMBOL_EDITOR: showGridPrefs( _( "Symbol Editor" ) );        break;
-    case FRAME_PCB_EDITOR:        showGridPrefs( _( "PCB Editor" ) );           break;
+    case FRAME_PCB_EDITOR:        showGridPrefs( _( "Site Layout Editor" ) );   break;
     case FRAME_FOOTPRINT_EDITOR:  showGridPrefs( _( "Footprint Editor" ) );     break;
     case FRAME_FOOTPRINT_VIEWER:  showGridPrefs( _( "Footprint Browser" ) );    break;
     case FRAME_PL_EDITOR:         showGridPrefs( _( "Drawing Sheet Editor" ) ); break;

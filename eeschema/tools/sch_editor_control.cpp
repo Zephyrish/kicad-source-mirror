@@ -23,6 +23,7 @@
  */
 
 #include "tools/sch_editor_control.h"
+#include "dialogs/dialog_cable_specs.h"
 
 #include <clipboard.h>
 #include <core/base64.h>
@@ -498,6 +499,28 @@ int SCH_EDITOR_CONTROL::Revert( const TOOL_EVENT& aEvent )
 int SCH_EDITOR_CONTROL::ShowSchematicSetup( const TOOL_EVENT& aEvent )
 {
     m_frame->ShowSchematicSetupDialog();
+    return 0;
+}
+
+
+int SCH_EDITOR_CONTROL::ShowCableSpecs( const TOOL_EVENT& aEvent )
+{
+    DIALOG_CABLE_SPECS dlg( m_frame );
+    dlg.ShowModal();
+    return 0;
+}
+
+
+int SCH_EDITOR_CONTROL::ShowConduitSchematic( const TOOL_EVENT& aEvent )
+{
+    // Bring up (or open) the PCB editor, then ask it to open the Conduit window.
+    KIWAY_PLAYER* pcbFrame = m_frame->Kiway().Player( FRAME_PCB_EDITOR, true );
+    if( !pcbFrame )
+        return 0;
+
+    pcbFrame->Show( true );
+    pcbFrame->Raise();
+    pcbFrame->OpenConduitSchematic();
     return 0;
 }
 
@@ -3923,6 +3946,8 @@ void SCH_EDITOR_CONTROL::setTransitions()
     Go( &SCH_EDITOR_CONTROL::SaveCurrSheetCopyAs,     SCH_ACTIONS::saveCurrSheetCopyAs.MakeEvent() );
     Go( &SCH_EDITOR_CONTROL::Revert,                  ACTIONS::revert.MakeEvent() );
     Go( &SCH_EDITOR_CONTROL::ShowSchematicSetup,      SCH_ACTIONS::schematicSetup.MakeEvent() );
+    Go( &SCH_EDITOR_CONTROL::ShowCableSpecs,          SCH_ACTIONS::cableSpecs.MakeEvent() );
+    Go( &SCH_EDITOR_CONTROL::ShowConduitSchematic,    SCH_ACTIONS::showConduitSchematic.MakeEvent() );
     Go( &SCH_EDITOR_CONTROL::PageSetup,               ACTIONS::pageSettings.MakeEvent() );
     Go( &SCH_EDITOR_CONTROL::Print,                   ACTIONS::print.MakeEvent() );
     Go( &SCH_EDITOR_CONTROL::Plot,                    ACTIONS::plot.MakeEvent() );

@@ -1622,7 +1622,7 @@ void EDA_BASE_FRAME::ShowPreferences( wxString aStartPage, wxString aStartParent
                 if( GetFrameType() ==  FRAME_PCB_EDITOR )
                     expand.push_back( (int) book->GetPageCount() );
 
-                book->AddPage( new wxPanel( book ), _( "PCB Editor" ) );
+                book->AddPage( new wxPanel( book ), _( "Site Layout Editor" ) );
                 book->AddLazySubPage( LAZY_CTOR( PANEL_PCB_DISPLAY_OPTS ), _( "Display Options" ) );
                 book->AddLazySubPage( LAZY_CTOR( PANEL_PCB_GRIDS ), _( "Grids" ) );
                 book->AddLazySubPage( LAZY_CTOR( PANEL_PCB_ORIGINS_AXES ), _( "Origins & Axes" ) );

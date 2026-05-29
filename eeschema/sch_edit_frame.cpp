@@ -3203,3 +3203,9 @@ bool SCH_EDIT_FRAME::doAutoSave()
     // Delegate to base auto-save behavior (commits pending local history) for now.
     return EDA_BASE_FRAME::doAutoSave();
 }
+
+
+void SCH_EDIT_FRAME::OpenCableSpecs()
+{
+    GetToolManager()->RunAction( SCH_ACTIONS::cableSpecs );
+}

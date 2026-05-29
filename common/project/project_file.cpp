@@ -93,6 +93,143 @@ PROJECT_FILE::PROJECT_FILE( const wxString& aFullPath ) :
     m_params.emplace_back( new PARAM_PATH( "pcbnew.last_paths.plot",
             &m_PcbLastPath[LAST_PATH_PLOT], "" ) );
 
+    // Site Layout: geographic origin for converting local (mm/ft) coords to lat/lon.
+    m_params.emplace_back( new PARAM<double>( "pcbnew.site_origin.lat",
+            &m_SiteOriginLat, 0.0 ) );
+    m_params.emplace_back( new PARAM<double>( "pcbnew.site_origin.lon",
+            &m_SiteOriginLon, 0.0 ) );
+    m_params.emplace_back( new PARAM<double>( "pcbnew.site_origin.rotation_deg",
+            &m_SiteOriginRotationDeg, 0.0 ) );
+
+    // Helpers to (de)serialize a CABLE_SPEC.
+    auto specToJson = []( const PROJECT_FILE::CABLE_SPEC& s ) -> nlohmann::json
+    {
+        return {
+            { "supplier",             std::string( s.supplier.utf8_str() ) },
+            { "part_number",          std::string( s.part_number.utf8_str() ) },
+            { "outer_diameter_in",    s.outer_diameter_in },
+            { "bend_radius_in",       s.bend_radius_in },
+            { "insulation_type",      std::string( s.insulation_type.utf8_str() ) },
+            { "jacket_type",          std::string( s.jacket_type.utf8_str() ) },
+            { "primary_qty",          s.primary_qty },
+            { "primary_conductors",   s.primary_conductors },
+            { "primary_size_value",   s.primary_size_value },
+            { "primary_size_unit",    static_cast<int>( s.primary_size_unit ) },
+            { "secondary_qty",        s.secondary_qty },
+            { "secondary_conductors", s.secondary_conductors },
+            { "secondary_size_value", s.secondary_size_value },
+            { "secondary_size_unit",  static_cast<int>( s.secondary_size_unit ) }
+        };
+    };
+
+    auto specFromJson = []( const nlohmann::json& v ) -> PROJECT_FILE::CABLE_SPEC
+    {
+        PROJECT_FILE::CABLE_SPEC s;
+        s.supplier              = wxString::FromUTF8( v.value( "supplier",
+                                                               std::string() ).c_str() );
+        s.part_number           = wxString::FromUTF8( v.value( "part_number",
+                                                               std::string() ).c_str() );
+        s.outer_diameter_in     = v.value( "outer_diameter_in",    0.0 );
+        s.bend_radius_in        = v.value( "bend_radius_in",       0.0 );
+        s.insulation_type       = wxString::FromUTF8( v.value( "insulation_type",
+                                                               std::string() ).c_str() );
+        s.jacket_type           = wxString::FromUTF8( v.value( "jacket_type",
+                                                               std::string() ).c_str() );
+        s.primary_qty           = v.value( "primary_qty",          0 );
+        s.primary_conductors    = v.value( "primary_conductors",   0 );
+        s.primary_size_value    = v.value( "primary_size_value",   0.0 );
+        s.primary_size_unit     = static_cast<PROJECT_FILE::CABLE_SIZE_UNIT>(
+                                      v.value( "primary_size_unit", 0 ) );
+        s.secondary_qty         = v.value( "secondary_qty",         0 );
+        s.secondary_conductors  = v.value( "secondary_conductors",  0 );
+        s.secondary_size_value  = v.value( "secondary_size_value",  0.0 );
+        s.secondary_size_unit   = static_cast<PROJECT_FILE::CABLE_SIZE_UNIT>(
+                                      v.value( "secondary_size_unit", 0 ) );
+        return s;
+    };
+
+    // Per-net-class cable specs
+    m_params.emplace_back( new PARAM_LAMBDA<nlohmann::json>(
+            "schematic.cable_specs",
+            [&, specToJson]() -> nlohmann::json
+            {
+                nlohmann::json j = nlohmann::json::object();
+                for( const auto& [name, spec] : m_CableSpecs )
+                    j[ std::string( name.utf8_str() ) ] = specToJson( spec );
+                return j;
+            },
+            [&, specFromJson]( const nlohmann::json& aJson )
+            {
+                m_CableSpecs.clear();
+                if( !aJson.is_object() )
+                    return;
+                for( auto it = aJson.begin(); it != aJson.end(); ++it )
+                {
+                    try
+                    {
+                        m_CableSpecs[ wxString::FromUTF8( it.key().c_str() ) ]
+                                = specFromJson( it.value() );
+                    }
+                    catch( ... ) {}
+                }
+            },
+            nlohmann::json::object() ) );
+
+    // Per-net cable specs (override class defaults)
+    m_params.emplace_back( new PARAM_LAMBDA<nlohmann::json>(
+            "schematic.cable_specs_by_net",
+            [&, specToJson]() -> nlohmann::json
+            {
+                nlohmann::json j = nlohmann::json::object();
+                for( const auto& [name, spec] : m_CableSpecsByNet )
+                    j[ std::string( name.utf8_str() ) ] = specToJson( spec );
+                return j;
+            },
+            [&, specFromJson]( const nlohmann::json& aJson )
+            {
+                m_CableSpecsByNet.clear();
+                if( !aJson.is_object() )
+                    return;
+                for( auto it = aJson.begin(); it != aJson.end(); ++it )
+                {
+                    try
+                    {
+                        m_CableSpecsByNet[ wxString::FromUTF8( it.key().c_str() ) ]
+                                = specFromJson( it.value() );
+                    }
+                    catch( ... ) {}
+                }
+            },
+            nlohmann::json::object() ) );
+
+    // Layer depths — per-copper-layer depth in inches (string key = integer layer ID).
+    m_params.emplace_back( new PARAM_LAMBDA<nlohmann::json>(
+            "pcbnew.layer_depths",
+            [&]() -> nlohmann::json
+            {
+                nlohmann::json j = nlohmann::json::object();
+                for( const auto& [layer, depth] : m_LayerDepthsInches )
+                    j[ std::to_string( layer ) ] = depth;
+                return j;
+            },
+            [&]( const nlohmann::json& aJson )
+            {
+                m_LayerDepthsInches.clear();
+                if( !aJson.is_object() )
+                    return;
+                for( auto it = aJson.begin(); it != aJson.end(); ++it )
+                {
+                    try
+                    {
+                        int    layer = std::stoi( it.key() );
+                        double depth = it.value().get<double>();
+                        m_LayerDepthsInches[ layer ] = depth;
+                    }
+                    catch( ... ) {}
+                }
+            },
+            nlohmann::json::object() ) );
+
     m_params.emplace_back( new PARAM<wxString>( "schematic.legacy_lib_dir",
             &m_LegacyLibDir, "" ) );
 
