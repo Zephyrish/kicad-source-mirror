@@ -218,6 +218,9 @@ public:
      */
     void ExecuteRemoteCommand( const char* cmdline ) override;
 
+    /// Site Layout: open the Cable Specs dialog. Called via KIWAY_PLAYER hook.
+    void OpenCableSpecs() override;
+
     void KiwayMailIn( KIWAY_MAIL_EVENT& aEvent ) override;
 
     /**

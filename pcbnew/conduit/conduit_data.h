@@ -66,7 +66,11 @@ public:
 
     /// Cross-sectional area used for conduit-fill calculations (mm^2).
     double GetAreaMm2() const { return m_areaMm2; }
-    void   SetAreaMm2( double aArea ) { m_areaMm2 = aArea; }
+    void   SetAreaMm2( double aArea ) { m_areaMm2 = aArea; m_areaKnown = true; }
+
+    /// True when a cable spec has been resolved and the area is meaningful.
+    bool   IsAreaKnown() const { return m_areaKnown; }
+    void   ClearAreaKnown()    { m_areaKnown = false; m_areaMm2 = 0.0; }
 
     /// Pad UUIDs that were on this net when last synced.
     /// This is the truly-stable identity: when a net is renamed, KiCad assigns a
@@ -86,6 +90,7 @@ private:
     wxString          m_fromRef;          // first component (alphabetical) on this net
     wxString          m_toRef;            // last component (alphabetical) on this net
     double            m_areaMm2;
+    bool              m_areaKnown = false;
     std::vector<KIID> m_padIds;
     bool              m_orphan = false;   // true if last sync couldn't find the net
 };
@@ -129,7 +134,12 @@ public:
     void RemoveCable( CABLE* aCable );
 
     /// Current fill % based on assigned cables. Returns 0 if diameter is 0.
+    /// Caller should check HasAllCableSizesKnown() first — fill % is meaningless if
+    /// any cable doesn't have a cable spec assigned yet.
     double ComputeFillPercent() const;
+
+    /// True if every cable in the conduit has a known cross-sectional area.
+    bool   HasAllCableSizesKnown() const;
 
 private:
     wxString            m_name;

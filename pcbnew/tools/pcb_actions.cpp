@@ -2280,8 +2280,36 @@ TOOL_ACTION PCB_ACTIONS::repairFootprint( TOOL_ACTION_ARGS()
 TOOL_ACTION PCB_ACTIONS::conduitTest( TOOL_ACTION_ARGS()
         .Name( "pcbnew.Control.conduitTest" )
         .Scope( AS_GLOBAL )
-        .FriendlyName( _( "Conduit: Test" ) )
-        .Tooltip( _( "Test that the conduit system is loaded" ) ) );
+        .FriendlyName( _( "Conduit Schematic" ) )
+        .Tooltip( _( "Open the Conduit Schematic editor" ) )
+        .Icon( BITMAPS::hierarchy_nav ) );
+
+TOOL_ACTION PCB_ACTIONS::cableSpecsFromPcb( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.Control.cableSpecsFromPcb" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Cable Specs..." ) )
+        .Tooltip( _( "Open the Cable Specs dialog (Schematic Editor)" ) )
+        .Icon( BITMAPS::add_bus ) );
+
+// Site Layout (Phase 4)
+TOOL_ACTION PCB_ACTIONS::siteOrigin( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.Control.siteOrigin" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Site Origin..." ) )
+        .Tooltip( _( "Set the geographic origin (lat/lon/rotation) for this site layout" ) ) );
+
+TOOL_ACTION PCB_ACTIONS::toggleGlobalFrame( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.Control.toggleGlobalFrame" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "View in Global (True North) Frame" ) )
+        .Tooltip( _( "Toggle between Site reference frame and Global (True North) frame" ) )
+        .ToolbarState( TOOLBAR_STATE::TOGGLE ) );
+
+TOOL_ACTION PCB_ACTIONS::layerDepths( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.Control.layerDepths" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Conduit Depths..." ) )
+        .Tooltip( _( "Set display name and burial depth for each conduit layer" ) ) );
 
 
 // PLACEMENT_TOOL

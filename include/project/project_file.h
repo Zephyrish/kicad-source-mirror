@@ -214,6 +214,65 @@ public:
     wxString m_PcbLastPath[LAST_PATH_SIZE];
 
     /**
+     * Site origin (for Site Layout work).
+     *
+     * The board's local (0,0) corresponds to this geographic point. Lat/lon are decimal
+     * degrees. Rotation is the clockwise-from-North angle (in degrees) of the board's
+     * local +X axis. Defaults: 0/0/0, treated as "not set" by the UI.
+     */
+    double m_SiteOriginLat = 0.0;
+    double m_SiteOriginLon = 0.0;
+    double m_SiteOriginRotationDeg = 0.0;
+
+    /**
+     * Layer depths (Site Layout): per copper layer ID, depth below grade in inches.
+     * Positive values = below surface (e.g., 24.0 = "buried 24 in"). 0 = surface.
+     * Keyed by PCB_LAYER_ID integer value.
+     */
+    std::map<int, double> m_LayerDepthsInches;
+
+    /**
+     * Cable spec (electrical schematic side). Used for Circuit List and conduit
+     * fill math. Can be assigned per net class OR per individual net — net-level
+     * overrides class-level.
+     *
+     * A cable may carry "primary" conductors (e.g., power) and optional "secondary"
+     * conductors (e.g., control or shield) within the same jacket.
+     */
+    enum class CABLE_SIZE_UNIT { AWG = 0, KCMIL = 1 };
+
+    struct CABLE_SPEC
+    {
+        // Sourcing
+        wxString supplier;                  ///< Manufacturer / supplier name
+        wxString part_number;               ///< Manufacturer's part number
+
+        // Physical properties of the cable as a whole
+        double   outer_diameter_in = 0.0;   ///< OD of the cable, for conduit fill calcs
+        double   bend_radius_in    = 0.0;   ///< min bend radius, inches
+        wxString insulation_type;           ///< e.g., "THWN-2", "XHHW-2"
+        wxString jacket_type;               ///< e.g., "PVC", "MC", "EPDM"
+
+        // Primary conductors
+        int             primary_qty         = 0;   ///< number of primary cables
+        int             primary_conductors  = 0;   ///< conductors per primary cable
+        double          primary_size_value  = 0.0; ///< numeric size value
+        CABLE_SIZE_UNIT primary_size_unit   = CABLE_SIZE_UNIT::AWG;
+
+        // Secondary conductors
+        int             secondary_qty         = 0;
+        int             secondary_conductors  = 0;
+        double          secondary_size_value  = 0.0;
+        CABLE_SIZE_UNIT secondary_size_unit   = CABLE_SIZE_UNIT::AWG;
+    };
+
+    /// Cable spec keyed by net class name (group default)
+    std::map<wxString, CABLE_SPEC> m_CableSpecs;
+
+    /// Cable spec keyed by individual net name (overrides class)
+    std::map<wxString, CABLE_SPEC> m_CableSpecsByNet;
+
+    /**
      * Board design settings for this project's board.  This will be initialized by PcbNew after
      * loading a board so that BOARD_DESIGN_SETTINGS doesn't need to live in common for now.
      * Owned by the BOARD; may be null if a board isn't loaded: be careful

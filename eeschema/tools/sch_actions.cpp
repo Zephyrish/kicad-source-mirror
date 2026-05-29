@@ -1230,6 +1230,20 @@ TOOL_ACTION SCH_ACTIONS::schematicSetup( TOOL_ACTION_ARGS()
         .Tooltip( _( "Edit schematic setup including annotation styles and electrical rules" ) )
         .Icon( BITMAPS::options_schematic ) );
 
+TOOL_ACTION SCH_ACTIONS::cableSpecs( TOOL_ACTION_ARGS()
+        .Name( "eeschema.EditorControl.cableSpecs" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Cable Specs..." ) )
+        .Tooltip( _( "Set physical cable properties (bend radius, jacket) per net class or net" ) )
+        .Icon( BITMAPS::add_bus ) );
+
+TOOL_ACTION SCH_ACTIONS::showConduitSchematic( TOOL_ACTION_ARGS()
+        .Name( "eeschema.EditorControl.showConduitSchematic" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Conduit Schematic" ) )
+        .Tooltip( _( "Open the Conduit Schematic editor (in PCB editor process)" ) )
+        .Icon( BITMAPS::hierarchy_nav ) );
+
 TOOL_ACTION SCH_ACTIONS::editPageNumber( TOOL_ACTION_ARGS()
         .Name( "eeschema.EditorControl.editPageNumber" )
         .Scope( AS_GLOBAL )

@@ -1164,6 +1164,12 @@ void PCB_EDIT_FRAME::setupUIConditions()
                 return GetDisplayOptions().m_FlipBoardView;
             };
 
+    auto globalFrameCond =
+            [this]( const SELECTION& )
+            {
+                return IsShowingGlobalFrame();
+            };
+
     auto layerManagerCond =
             [this] ( const SELECTION& )
             {
@@ -1241,6 +1247,7 @@ void PCB_EDIT_FRAME::setupUIConditions()
 
     mgr->SetConditions( ACTIONS::highContrastMode,         CHECK( highContrastCond ) );
     mgr->SetConditions( PCB_ACTIONS::flipBoard,            CHECK( boardFlippedCond ) );
+    mgr->SetConditions( PCB_ACTIONS::toggleGlobalFrame,    CHECK( globalFrameCond ) );
     mgr->SetConditions( PCB_ACTIONS::showLayersManager,    CHECK( layerManagerCond ) );
     mgr->SetConditions( PCB_ACTIONS::showRatsnest,         CHECK( globalRatsnestCond ) );
     mgr->SetConditions( PCB_ACTIONS::ratsnestLineMode,     CHECK( curvedRatsnestCond ) );
@@ -3593,4 +3600,10 @@ bool PCB_EDIT_FRAME::DoAutoSave()
     // flushing zone fills or router state) they can be added here before calling the
     // base class method.
     return EDA_BASE_FRAME::doAutoSave();
+}
+
+
+void PCB_EDIT_FRAME::OpenConduitSchematic()
+{
+    GetToolManager()->RunAction( PCB_ACTIONS::conduitTest );
 }

@@ -25,14 +25,23 @@
 #include <sch_line.h>
 #include <sch_bus_entry.h>
 #include <sch_junction.h>
+#include <sch_connection.h>
 #include <dialog_wire_bus_properties.h>
+#include <dialogs/dialog_cable_specs.h>
 #include <dialogs/dialog_color_picker.h>
 #include <settings/color_settings.h>
 #include <settings/settings_manager.h>
 #include <sch_edit_frame.h>
+#include <project.h>
+#include <project/project_file.h>
+#include <project/net_settings.h>
+#include <netclass.h>
 #include <stroke_params.h>
 #include <widgets/color_swatch.h>
 #include <sch_commit.h>
+
+#include <wx/button.h>
+#include <wx/sizer.h>
 
 
 DIALOG_WIRE_BUS_PROPERTIES::DIALOG_WIRE_BUS_PROPERTIES( SCH_EDIT_FRAME* aParent,
@@ -59,6 +68,41 @@ DIALOG_WIRE_BUS_PROPERTIES::DIALOG_WIRE_BUS_PROPERTIES( SCH_EDIT_FRAME* aParent,
     m_typeCombo->Append( DEFAULT_WIRE_STYLE_LABEL );
 
     SetupStandardButtons( { { wxID_APPLY, _( "Default" ) } } );
+
+    // ---- Site Layout extension: button to edit Cable Spec for this wire's net class ----
+    wxButton* cableSpecBtn = new wxButton( this, wxID_ANY, _( "Edit Cable Spec..." ) );
+    if( wxSizer* topSizer = GetSizer() )
+        topSizer->Insert( topSizer->GetItemCount() - 1, cableSpecBtn, 0, wxALL | wxALIGN_LEFT, 5 );
+
+    cableSpecBtn->Bind( wxEVT_BUTTON,
+            [this]( wxCommandEvent& )
+            {
+                // Resolve the wire's net class name. Fall back to default if we can't.
+                wxString netClassName;
+
+                if( !m_items.empty() )
+                {
+                    SCH_ITEM* item = m_items.front();
+                    if( SCH_CONNECTION* conn = item->Connection() )
+                    {
+                        wxString netName = conn->Name();
+
+                        auto netSettings = m_frame->Prj().GetProjectFile().NetSettings();
+                        if( netSettings )
+                        {
+                            const auto& assignments = netSettings->GetNetclassLabelAssignments();
+                            auto ait = assignments.find( netName );
+                            if( ait != assignments.end() && !ait->second.empty() )
+                                netClassName = *ait->second.begin();
+                            else if( auto def = netSettings->GetDefaultNetclass() )
+                                netClassName = def->GetName();
+                        }
+                    }
+                }
+
+                DIALOG_CABLE_SPECS dlg( m_frame, netClassName );
+                dlg.ShowModal();
+            } );
 
     // Now all widgets have the size fixed, call FinishDialogSettings
     finishDialogSettings();

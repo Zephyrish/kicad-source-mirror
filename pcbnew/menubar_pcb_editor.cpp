@@ -276,6 +276,7 @@ void PCB_EDIT_FRAME::doReCreateMenuBar()
     viewMenu->Add( contrastModeSubMenu );
 
     viewMenu->Add( PCB_ACTIONS::flipBoard,                  ACTION_MENU::CHECK );
+    viewMenu->Add( PCB_ACTIONS::toggleGlobalFrame,          ACTION_MENU::CHECK );
 
 #ifdef __APPLE__
     viewMenu->AppendSeparator();
@@ -435,6 +436,11 @@ void PCB_EDIT_FRAME::doReCreateMenuBar()
     // Conduit system (experimental)
     toolsMenu->AppendSeparator();
     toolsMenu->Add( PCB_ACTIONS::conduitTest );
+
+    // Site Layout settings
+    toolsMenu->AppendSeparator();
+    toolsMenu->Add( PCB_ACTIONS::siteOrigin );
+    toolsMenu->Add( PCB_ACTIONS::layerDepths );
 
     ACTION_MENU* multichannelSubmenu = new ACTION_MENU( false, selTool );
     multichannelSubmenu->SetTitle( _( "Multi-Channel" ) );
