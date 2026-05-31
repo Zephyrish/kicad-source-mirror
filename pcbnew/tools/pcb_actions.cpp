@@ -2298,6 +2298,21 @@ TOOL_ACTION PCB_ACTIONS::routeConduit( TOOL_ACTION_ARGS()
         .Tooltip( _( "Draw a conduit polyline on the current layer for a selected conduit" ) )
         .Icon( BITMAPS::add_tracks ) );      // active routing action
 
+TOOL_ACTION PCB_ACTIONS::editConduitRoute( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.Control.editConduitRoute" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Edit Conduit Route" ) )
+        .Tooltip( _( "Drag the route nodes of an existing conduit; fillets update live" ) )
+        .Icon( BITMAPS::move ) );
+
+TOOL_ACTION PCB_ACTIONS::anchorConduit( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.Control.anchorConduit" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Anchor Conduit to Equipment" ) )
+        .Tooltip( _( "Bind a conduit endpoint to a footprint so it follows when the "
+                     "equipment moves" ) )
+        .Icon( BITMAPS::add_line2bus ) );
+
 // Site Layout (Phase 4)
 TOOL_ACTION PCB_ACTIONS::siteOrigin( TOOL_ACTION_ARGS()
         .Name( "pcbnew.Control.siteOrigin" )

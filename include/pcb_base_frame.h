@@ -431,10 +431,22 @@ protected:
      */
     void setFPWatcher( FOOTPRINT* aFootprint );
 
+public:
+    /// True if the layout is being displayed in the Global (true-North) reference frame.
+    /// When false (default), it's shown in the Site frame as designed.
+    bool IsShowingGlobalFrame() const { return m_showGlobalFrame; }
+
+    /// Toggle Global vs Site reference frame display. Applies GAL rotation so the
+    /// canvas visually rotates to align with True North in Global mode.
+    void SetShowGlobalFrame( bool aGlobal );
+
 protected:
     BOARD*                  m_pcb;
     PCB_DISPLAY_OPTIONS     m_displayOptions;
     PCB_ORIGIN_TRANSFORMS   m_originTransforms;
+
+    /// Site Layout view-mode flag (Phase 4.B). Runtime only, not persisted.
+    bool                    m_showGlobalFrame = false;
 
 private:
 #if defined(__linux__) || defined(__FreeBSD__)

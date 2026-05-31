@@ -587,6 +587,8 @@ public:
     static TOOL_ACTION conduitTest;
     static TOOL_ACTION cableSpecsFromPcb;
     static TOOL_ACTION routeConduit;
+    static TOOL_ACTION editConduitRoute;
+    static TOOL_ACTION anchorConduit;
 
     // Site Layout (Phase 4)
     static TOOL_ACTION siteOrigin;

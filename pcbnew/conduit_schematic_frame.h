@@ -45,6 +45,38 @@ public:
     /// Used by the PCB-side routing tool: list conduit names that the user can pick.
     std::vector<wxString> GetConduitNames() const;
 
+    /// Like GetConduitNames(), but only conduits that have a Conduit Spec assigned.
+    /// Routing requires a spec (it supplies bend radius / clearance / max bend angle).
+    std::vector<wxString> GetRoutableConduitNames() const;
+
+    /// Conduits that already have a route (>= 2 points) — the editable set.
+    std::vector<wxString> GetRoutedConduitNames() const;
+
+    /// Fetch a conduit's current route layer + virtual-center points. Returns false
+    /// if the conduit isn't found or has no route.
+    bool GetConduitRoute( const wxString& aConduitName, int& aLayer,
+                          std::vector<wxPoint>& aPoints ) const;
+
+    /// Anchor one end of a conduit to a footprint. The endpoint keeps its current
+    /// position; the stored offset = (endpoint − footprint origin). Saves + pushes
+    /// the overlay. Returns false if the conduit isn't found / has no route.
+    bool AnchorConduitEnd( const wxString& aConduitName, bool aAtFront,
+                           const KIID& aFootprintUuid, const wxPoint& aFootprintOrigin );
+
+    /// For every anchored conduit endpoint, re-derive its position from the current
+    /// footprint origin (origin + stored offset) and recompute the faulty state.
+    /// Updates the overlay if anything moved. Returns true if anything changed.
+    bool UpdateAnchoredEndpoints( BOARD* aBoard );
+
+    /// Report whether each end of a conduit currently has an anchor.
+    void GetConduitAnchorFlags( const wxString& aConduitName, bool& aStart, bool& aEnd ) const;
+
+    /// Remove the anchor on one end of a conduit (geometry unchanged). Saves + refreshes.
+    void RemoveConduitAnchor( const wxString& aConduitName, bool aAtFront );
+
+    /// Clear a conduit's entire route (points + both anchors). Saves + refreshes.
+    void ClearConduitRoute( const wxString& aConduitName );
+
     /// Collision data for the routing tool. One entry per conduit that already has
     /// a route. Clearance and half-width are pre-computed in board IU.
     struct ROUTE_FOR_COLLISION
@@ -65,6 +97,14 @@ public:
 
     /// Effective half-width for a conduit (half of its inner diameter). Returns IU.
     int GetConduitHalfWidthIu( const wxString& aConduitName ) const;
+
+    /// Minimum bend radius for a conduit, from its spec, in board IU. 0 if no spec
+    /// or spec has no bend radius (fillets are then skipped / sharp corners).
+    int GetConduitBendRadiusIu( const wxString& aConduitName ) const;
+
+    /// Steepest single-corner bend angle (degrees of deflection) allowed for a
+    /// conduit, from its spec. Returns the spec default (90) if no spec assigned.
+    double GetConduitMaxBendAngleDeg( const wxString& aConduitName ) const;
 
     /// Used by the PCB-side routing tool: write a freshly-drawn polyline to the
     /// named conduit. Updates layer + points, recomputes lengths, refreshes UI,

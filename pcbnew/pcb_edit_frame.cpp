@@ -43,6 +43,8 @@
 #include <settings/color_settings.h>
 #include <pgm_base.h>
 #include <pcb_edit_frame.h>
+#include <conduit/conduit_data.h>   // BuildFilletedPolyline
+#include <conduit_schematic_frame.h>
 #include <3d_viewer/eda_3d_viewer_frame.h>
 #include <api/api_plugin_manager.h>
 #include <geometry/geometry_utils.h>
@@ -2214,6 +2216,13 @@ void PCB_EDIT_FRAME::OnModify()
     if( !GetTitle().StartsWith( wxT( "*" ) ) )
         UpdateTitle();
 
+    // Follow anchored conduit endpoints when equipment moves (if the Conduit
+    // Schematic is open; it owns the in-memory conduit + anchor data).
+    if( CONDUIT_SCHEMATIC_FRAME* conduitFrame = dynamic_cast<CONDUIT_SCHEMATIC_FRAME*>(
+                wxWindow::FindWindowByName( CONDUIT_SCHEMATIC_FRAME_NAME ) ) )
+    {
+        conduitFrame->UpdateAnchoredEndpoints( GetBoard() );
+    }
 }
 
 
@@ -3659,10 +3668,54 @@ void PCB_EDIT_FRAME::LoadConduitOverlayFromSidecar()
             info.label = wxString::FromUTF8(
                     cj.value( "name", std::string() ).c_str() );
 
+            // Drawn width = conduit diameter, converted from inches to IU at the
+            // foot-scale convention (1 inch = 1,000,000/12 IU).
+            info.widthIu = (int) ( cj.value( "diameter_inches", 0.0 ) * ( 1000000.0 / 12.0 ) );
+            info.faulty  = cj.value( "faulty", false );
+
+            // Resolve the bend radius LIVE from the conduit's spec so editing the
+            // spec is reflected on reload. Fall back to the baked value only if the
+            // spec can't be found.
+            info.bendRadiusIu = cj.value( "bend_radius_iu", 0.0 );
+
+            wxString specName = wxString::FromUTF8(
+                    cj.value( "spec_name", std::string() ).c_str() );
+
+            if( !specName.IsEmpty() )
+            {
+                const auto& specs = Prj().GetProjectFile().m_ConduitSpecs;
+                auto sit = specs.find( specName );
+                if( sit != specs.end() )
+                    info.bendRadiusIu = sit->second.bend_radius_in * ( 1000000.0 / 12.0 );
+            }
+
             for( const auto& pj : cj[ "route_points" ] )
             {
                 if( pj.is_array() && pj.size() == 2 )
                     info.points.emplace_back( pj[ 0 ].get<int>(), pj[ 1 ].get<int>() );
+            }
+
+            // Anchor tethers (footprint origin → endpoint). The origin is recoverable
+            // from the saved data: origin = endpoint − offset.
+            auto readOffset = [&]( const char* aKey ) -> wxPoint
+            {
+                if( cj.contains( aKey ) && cj[ aKey ].is_array() && cj[ aKey ].size() == 2 )
+                    return wxPoint( cj[ aKey ][ 0 ].get<int>(), cj[ aKey ][ 1 ].get<int>() );
+                return wxPoint( 0, 0 );
+            };
+            if( info.points.size() >= 2 && cj.value( "has_start_anchor", false ) )
+            {
+                wxPoint off = readOffset( "start_offset" );
+                info.anchorLines.emplace_back(
+                        wxPoint( info.points.front().x - off.x, info.points.front().y - off.y ),
+                        info.points.front() );
+            }
+            if( info.points.size() >= 2 && cj.value( "has_end_anchor", false ) )
+            {
+                wxPoint off = readOffset( "end_offset" );
+                info.anchorLines.emplace_back(
+                        wxPoint( info.points.back().x - off.x, info.points.back().y - off.y ),
+                        info.points.back() );
             }
 
             if( info.points.size() >= 2 )
@@ -3691,24 +3744,82 @@ void PCB_EDIT_FRAME::UpdateConduitOverlay(
 
     m_conduitOverlay->Clear();
 
-    // Draw each conduit as a thick polyline. Color is a neutral conduit color for
-    // now; future iterations can color per cable type.
-    constexpr int CONDUIT_DRAW_WIDTH_IU = 200000;     // ~0.2 mm = 0.2 ft in our convention
+    // Each conduit is drawn at its true physical width (= conduit diameter), so the
+    // line thickness reads as the conduit's outer size in feet. A floor keeps tiny
+    // conduits visible.
+    constexpr int CONDUIT_MIN_WIDTH_IU = 50000;     // ~0.05 ft floor
     const KIGFX::COLOR4D conduitColor( 0.9, 0.5, 0.1, 0.85 );    // orange-ish
 
     m_conduitOverlay->SetIsStroke( true );
     m_conduitOverlay->SetIsFill( false );
     m_conduitOverlay->SetStrokeColor( conduitColor );
-    m_conduitOverlay->SetLineWidth( CONDUIT_DRAW_WIDTH_IU );
+
+    const KIGFX::COLOR4D faultyColor( 0.95, 0.15, 0.15, 0.95 );   // red, dashed
+    const KIGFX::COLOR4D anchorColor( 0.2, 0.9, 0.5, 0.9 );       // green tether
+
+    // Draw aFlat as a dashed polyline (the overlay has no native dash style).
+    auto drawDashed = [&]( const std::vector<VECTOR2I>& aFlat, double aDashLen )
+    {
+        double carry = 0.0;     // distance walked into the current dash/gap
+        bool   on = true;
+        for( size_t i = 1; i < aFlat.size(); ++i )
+        {
+            VECTOR2D a( aFlat[i - 1].x, aFlat[i - 1].y );
+            VECTOR2D b( aFlat[i].x, aFlat[i].y );
+            VECTOR2D seg = b - a;
+            double   segLen = seg.EuclideanNorm();
+            if( segLen < 1.0 )
+                continue;
+            VECTOR2D dir = seg / segLen;
+            double   pos = 0.0;
+            while( pos < segLen )
+            {
+                double remain = aDashLen - carry;
+                double step = std::min( remain, segLen - pos );
+                if( on )
+                    m_conduitOverlay->Line( VECTOR2I( a.x + dir.x * pos, a.y + dir.y * pos ),
+                                            VECTOR2I( a.x + dir.x * ( pos + step ),
+                                                      a.y + dir.y * ( pos + step ) ) );
+                pos += step;
+                carry += step;
+                if( carry >= aDashLen - 1.0 ) { carry = 0.0; on = !on; }
+            }
+        }
+    };
 
     for( const CONDUIT_ROUTE_INFO& route : aRoutes )
     {
-        for( size_t i = 1; i < route.points.size(); ++i )
+        // Replace sharp corners with fillets at the conduit's bend radius so the
+        // drawn run matches the physical (and length-computed) geometry. If a fillet
+        // doesn't fit the spec radius, fits=false → the conduit is flagged faulty.
+        std::vector<VECTOR2I> centers;
+        centers.reserve( route.points.size() );
+        for( const wxPoint& p : route.points )
+            centers.emplace_back( p.x, p.y );
+
+        bool fits = true;
+        std::vector<VECTOR2I> flat = BuildFilletedPolyline( centers, route.bendRadiusIu, &fits );
+        bool faulty = route.faulty || !fits;
+
+        m_conduitOverlay->SetLineWidth( std::max( route.widthIu, CONDUIT_MIN_WIDTH_IU ) );
+        m_conduitOverlay->SetStrokeColor( faulty ? faultyColor : conduitColor );
+
+        if( faulty )
         {
-            m_conduitOverlay->Line(
-                    VECTOR2I( route.points[i - 1].x, route.points[i - 1].y ),
-                    VECTOR2I( route.points[i    ].x, route.points[i    ].y ) );
+            drawDashed( flat, std::max( route.widthIu, CONDUIT_MIN_WIDTH_IU ) * 3.0 );
         }
+        else
+        {
+            for( size_t i = 1; i < flat.size(); ++i )
+                m_conduitOverlay->Line( flat[i - 1], flat[i] );
+        }
+
+        // Anchor tethers: footprint origin → endpoint (thin solid line).
+        m_conduitOverlay->SetLineWidth( CONDUIT_MIN_WIDTH_IU / 2 );
+        m_conduitOverlay->SetStrokeColor( anchorColor );
+        for( const auto& [origin, endpoint] : route.anchorLines )
+            m_conduitOverlay->Line( VECTOR2I( origin.x, origin.y ),
+                                    VECTOR2I( endpoint.x, endpoint.y ) );
     }
 
     canvas->ForceRefresh();

@@ -14,6 +14,39 @@
 #include <wx/string.h>
 
 #include <kiid.h>
+#include <math/vector2d.h>
+
+
+/**
+ * Given a polyline of "virtual center" vertices and a bend radius (board IU),
+ * return a flattened polyline in which each interior corner is replaced by a
+ * circular fillet of that radius, tangent to both adjacent segments. The arc is
+ * approximated by short line segments so callers can both draw it and measure
+ * its length from the same data.
+ *
+ * If aRadiusIu <= 0, or fewer than 3 points are given, the input is returned
+ * unchanged. If a corner doesn't have room for the full-radius fillet (the
+ * required tangent length exceeds half the shorter adjacent segment), the corner
+ * is left SHARP (no fillet — never silently shrunk) and, if aFitsOk is provided,
+ * *aFitsOk is set false.
+ */
+std::vector<VECTOR2I> BuildFilletedPolyline( const std::vector<VECTOR2I>& aCenters,
+                                             double aRadiusIu, bool* aFitsOk = nullptr );
+
+
+/**
+ * Move node aMovedIdx of a route to aTarget while keeping every segment's direction
+ * fixed (snapped angles never change) and holding the FAR endpoint fixed (the last
+ * point if aFixedIsLast, else the first). Only segment lengths change, distributed
+ * by least-squares; nodes on the near side of the moved node translate rigidly.
+ *
+ * Returns true if a valid solution was found. Returns false (and leaves aPts
+ * unchanged) when the target can't be reached without changing an angle or with a
+ * non-negative segment length — i.e. the conduit was stretched too far; the caller
+ * should flag it faulty.
+ */
+bool SolveRoutePreserveAngles( std::vector<wxPoint>& aPts, int aMovedIdx,
+                               const wxPoint& aTarget, bool aFixedIsLast );
 
 
 enum class CONDUIT_TYPE
@@ -148,6 +181,16 @@ public:
     int  GetRouteLayer() const { return m_routeLayer; }
     void SetRouteLayer( int aLayer ) { m_routeLayer = aLayer; }
 
+    /// Bend radius (board IU) used to fillet the route corners and to compute the
+    /// filleted run length. Resolved from the conduit's spec by the frame. 0 =
+    /// sharp corners (no fillet). Setting it recomputes the horizontal length.
+    double GetFilletRadiusIu() const { return m_filletRadiusIu; }
+    void   SetFilletRadiusIu( double aRadiusIu )
+    {
+        m_filletRadiusIu = aRadiusIu;
+        recomputeHorizontalFromRoute();
+    }
+
     /// Horizontal run length (feet) along the layer. If route points are set, this
     /// is derived from them; otherwise it's a manually-entered value. Does NOT
     /// include the depth dive (surface ↔ layer); that's added per-layer using
@@ -184,6 +227,28 @@ public:
     double GetCachedTotalLengthFt() const { return m_cachedTotalLengthFt; }
     void   SetCachedTotalLengthFt( double aFt ) { m_cachedTotalLengthFt = aFt; }
 
+    // ---- Equipment anchors (Phase 4.F.4) ----
+    // An endpoint can be anchored to a footprint (by UUID). The stored offset is
+    // (endpoint − footprint origin) captured at bind time; on a move the endpoint
+    // tracks the footprint as (origin + offset). m_faulty is set when a follow
+    // leaves the run unable to satisfy the spec (rendered dashed).
+    bool HasStartAnchor() const { return m_hasStartAnchor; }
+    bool HasEndAnchor()   const { return m_hasEndAnchor; }
+    const KIID&    GetStartAnchor() const { return m_startAnchor; }
+    const KIID&    GetEndAnchor()   const { return m_endAnchor; }
+    const wxPoint& GetStartOffset() const { return m_startOffset; }
+    const wxPoint& GetEndOffset()   const { return m_endOffset; }
+
+    void SetStartAnchor( const KIID& aFp, const wxPoint& aOffset )
+    { m_hasStartAnchor = true; m_startAnchor = aFp; m_startOffset = aOffset; }
+    void SetEndAnchor( const KIID& aFp, const wxPoint& aOffset )
+    { m_hasEndAnchor = true; m_endAnchor = aFp; m_endOffset = aOffset; }
+    void ClearStartAnchor() { m_hasStartAnchor = false; }
+    void ClearEndAnchor()   { m_hasEndAnchor = false; }
+
+    bool IsFaulty() const { return m_faulty; }
+    void SetFaulty( bool aFaulty ) { m_faulty = aFaulty; }
+
     const std::vector<CABLE*>& GetCables() const { return m_cables; }
     void AddCable( CABLE* aCable ) { m_cables.push_back( aCable ); }
     void RemoveCable( CABLE* aCable );
@@ -205,6 +270,14 @@ private:
     int                 m_posX;
     int                 m_posY;
     int                  m_routeLayer = -1;
+    bool                 m_hasStartAnchor = false;
+    bool                 m_hasEndAnchor = false;
+    KIID                 m_startAnchor;
+    KIID                 m_endAnchor;
+    wxPoint              m_startOffset;
+    wxPoint              m_endOffset;
+    bool                 m_faulty = false;
+    double               m_filletRadiusIu = 0.0;
     double               m_horizontalLengthFt = 0.0;
     double               m_cachedTotalLengthFt = 0.0;   // updated by frame each refresh
     std::vector<wxPoint> m_routePoints;                 // board IU

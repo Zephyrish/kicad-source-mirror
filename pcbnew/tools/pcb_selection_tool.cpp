@@ -502,6 +502,10 @@ int PCB_SELECTION_TOOL::Main( const TOOL_EVENT& aEvent )
 
             if( m_selection.GetSize() == 1 && m_selection[0]->Type() == PCB_GROUP_T )
                 EnterGroup();
+            else if( m_selection.Empty() )
+                // Empty space: may be over a conduit overlay (not a board item).
+                // The handler hit-tests the cursor and silently no-ops if not.
+                m_toolMgr->RunAction( PCB_ACTIONS::editConduitRoute );
             else
                 m_toolMgr->RunAction( PCB_ACTIONS::properties );
         }

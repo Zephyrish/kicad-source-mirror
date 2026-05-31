@@ -336,6 +336,265 @@ std::vector<wxString> CONDUIT_SCHEMATIC_FRAME::GetConduitNames() const
 static constexpr double IU_PER_INCH = 1000000.0 / 12.0;
 
 
+std::vector<wxString> CONDUIT_SCHEMATIC_FRAME::GetRoutableConduitNames() const
+{
+    std::vector<wxString> out;
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( !c->GetSpecName().IsEmpty() )
+            out.push_back( c->GetName() );
+    }
+    return out;
+}
+
+
+static FOOTPRINT* findFootprintByUuid( BOARD* aBoard, const KIID& aUuid )
+{
+    if( !aBoard )
+        return nullptr;
+    for( FOOTPRINT* fp : aBoard->Footprints() )
+        if( fp->m_Uuid == aUuid )
+            return fp;
+    return nullptr;
+}
+
+
+std::vector<wxString> CONDUIT_SCHEMATIC_FRAME::GetRoutedConduitNames() const
+{
+    std::vector<wxString> out;
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( !c->GetSpecName().IsEmpty() && c->GetRoutePoints().size() >= 2 )
+            out.push_back( c->GetName() );
+    }
+    return out;
+}
+
+
+bool CONDUIT_SCHEMATIC_FRAME::GetConduitRoute( const wxString& aConduitName, int& aLayer,
+                                               std::vector<wxPoint>& aPoints ) const
+{
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( c->GetName() != aConduitName )
+            continue;
+        if( c->GetRoutePoints().size() < 2 )
+            return false;
+
+        aLayer  = c->GetRouteLayer();
+        aPoints = c->GetRoutePoints();
+        return true;
+    }
+    return false;
+}
+
+
+int CONDUIT_SCHEMATIC_FRAME::GetConduitBendRadiusIu( const wxString& aConduitName ) const
+{
+    const CONDUIT* conduit = nullptr;
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( c->GetName() == aConduitName ) { conduit = c.get(); break; }
+    }
+    if( !conduit || conduit->GetSpecName().IsEmpty() )
+        return 0;
+
+    const PROJECT_FILE& proj = const_cast<CONDUIT_SCHEMATIC_FRAME*>( this )
+                                       ->Prj().GetProjectFile();
+    auto it = proj.m_ConduitSpecs.find( conduit->GetSpecName() );
+    if( it == proj.m_ConduitSpecs.end() )
+        return 0;
+    return static_cast<int>( it->second.bend_radius_in * IU_PER_INCH );
+}
+
+
+double CONDUIT_SCHEMATIC_FRAME::GetConduitMaxBendAngleDeg( const wxString& aConduitName ) const
+{
+    const CONDUIT* conduit = nullptr;
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( c->GetName() == aConduitName ) { conduit = c.get(); break; }
+    }
+    if( !conduit || conduit->GetSpecName().IsEmpty() )
+        return 90.0;
+
+    const PROJECT_FILE& proj = const_cast<CONDUIT_SCHEMATIC_FRAME*>( this )
+                                       ->Prj().GetProjectFile();
+    auto it = proj.m_ConduitSpecs.find( conduit->GetSpecName() );
+    if( it == proj.m_ConduitSpecs.end() )
+        return 90.0;
+    return it->second.max_bend_angle_deg;
+}
+
+
+bool CONDUIT_SCHEMATIC_FRAME::AnchorConduitEnd( const wxString& aConduitName, bool aAtFront,
+                                                const KIID&    aFootprintUuid,
+                                                const wxPoint& aFootprintOrigin )
+{
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( c->GetName() != aConduitName )
+            continue;
+        if( c->GetRoutePoints().size() < 2 )
+            return false;
+
+        const wxPoint& endpoint = aAtFront ? c->GetRoutePoints().front()
+                                           : c->GetRoutePoints().back();
+        wxPoint offset( endpoint.x - aFootprintOrigin.x, endpoint.y - aFootprintOrigin.y );
+
+        if( aAtFront )
+            c->SetStartAnchor( aFootprintUuid, offset );
+        else
+            c->SetEndAnchor( aFootprintUuid, offset );
+
+        refreshConduitList();
+        refreshCableList();   // pushes overlay
+        setDirty( true );
+        if( !m_filePath.IsEmpty() )
+            saveToFile( m_filePath );
+        return true;
+    }
+    return false;
+}
+
+
+void CONDUIT_SCHEMATIC_FRAME::GetConduitAnchorFlags( const wxString& aConduitName,
+                                                     bool& aStart, bool& aEnd ) const
+{
+    aStart = aEnd = false;
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( c->GetName() == aConduitName )
+        {
+            aStart = c->HasStartAnchor();
+            aEnd   = c->HasEndAnchor();
+            return;
+        }
+    }
+}
+
+
+void CONDUIT_SCHEMATIC_FRAME::RemoveConduitAnchor( const wxString& aConduitName, bool aAtFront )
+{
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( c->GetName() != aConduitName )
+            continue;
+
+        if( aAtFront )
+            c->ClearStartAnchor();
+        else
+            c->ClearEndAnchor();
+
+        refreshConduitList();
+        refreshCableList();
+        setDirty( true );
+        if( !m_filePath.IsEmpty() )
+            saveToFile( m_filePath );
+        return;
+    }
+}
+
+
+void CONDUIT_SCHEMATIC_FRAME::ClearConduitRoute( const wxString& aConduitName )
+{
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( c->GetName() != aConduitName )
+            continue;
+
+        c->ClearRoutePoints();
+        c->ClearStartAnchor();
+        c->ClearEndAnchor();
+        c->SetFaulty( false );
+
+        refreshConduitList();
+        refreshCableList();
+        setDirty( true );
+        if( !m_filePath.IsEmpty() )
+            saveToFile( m_filePath );
+        return;
+    }
+}
+
+
+bool CONDUIT_SCHEMATIC_FRAME::UpdateAnchoredEndpoints( BOARD* aBoard )
+{
+    if( !aBoard )
+        return false;
+
+    bool anyChanged = false;
+
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( c->GetRoutePoints().size() < 2 )
+            continue;
+        if( !c->HasStartAnchor() && !c->HasEndAnchor() )
+            continue;
+
+        std::vector<wxPoint> pts = c->GetRoutePoints();
+        bool changed = false;
+        bool faulty  = false;
+
+        // Move the anchored endpoint(s) to track the footprint. The far end is held
+        // fixed and all angles preserved (lengths adjust). If the target can't be
+        // reached that way, the conduit is faulty: snap the end to the equipment so
+        // the tether stays connected, but flag it red.
+        if( c->HasStartAnchor() )
+        {
+            if( FOOTPRINT* fp = findFootprintByUuid( aBoard, c->GetStartAnchor() ) )
+            {
+                wxPoint np( fp->GetPosition().x + c->GetStartOffset().x,
+                            fp->GetPosition().y + c->GetStartOffset().y );
+                if( np != pts.front() )
+                {
+                    if( !SolveRoutePreserveAngles( pts, 0, np, /*fixedIsLast*/ true ) )
+                    {
+                        pts.front() = np;
+                        faulty = true;
+                    }
+                    changed = true;
+                }
+            }
+        }
+        if( c->HasEndAnchor() )
+        {
+            if( FOOTPRINT* fp = findFootprintByUuid( aBoard, c->GetEndAnchor() ) )
+            {
+                wxPoint np( fp->GetPosition().x + c->GetEndOffset().x,
+                            fp->GetPosition().y + c->GetEndOffset().y );
+                if( np != pts.back() )
+                {
+                    if( !SolveRoutePreserveAngles( pts, (int) pts.size() - 1, np,
+                                                   /*fixedIsLast*/ false ) )
+                    {
+                        pts.back() = np;
+                        faulty = true;
+                    }
+                    changed = true;
+                }
+            }
+        }
+
+        if( !changed )
+            continue;
+
+        c->SetRoutePoints( std::move( pts ) );
+        c->SetFaulty( faulty );
+        anyChanged = true;
+    }
+
+    if( anyChanged )
+    {
+        refreshConduitList();
+        refreshCableList();   // pushes overlay
+        setDirty( true );     // recomputable from anchors, so don't write file here
+    }
+
+    return anyChanged;
+}
+
+
 int CONDUIT_SCHEMATIC_FRAME::GetConduitClearanceIu( const wxString& aConduitName ) const
 {
     const CONDUIT* conduit = nullptr;
@@ -399,7 +658,8 @@ void CONDUIT_SCHEMATIC_FRAME::SetConduitRoute( const wxString& aConduitName, int
             continue;
 
         c->SetRouteLayer( aLayer );
-        c->SetRoutePoints( aPoints );    // also recomputes horizontal length
+        c->SetFilletRadiusIu( GetConduitBendRadiusIu( aConduitName ) );
+        c->SetRoutePoints( aPoints );    // also recomputes filleted horizontal length
 
         refreshConduitList();
         refreshCableList();   // also refreshes canvas + cache + overlay push
@@ -656,6 +916,12 @@ void CONDUIT_SCHEMATIC_FRAME::syncCablesFromBoard()
         // 3. No spec — leave m_areaKnown == false
     }
 
+    // ---- Re-resolve fillet radius from each conduit's current spec ----
+    // The radius is NOT baked: resolving it here means a later spec edit
+    // propagates to the filleted length + overlay on the next refresh.
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+        c->SetFilletRadiusIu( GetConduitBendRadiusIu( c->GetName() ) );
+
     // ---- Cache per-conduit total lengths (uses LayerDepths from project) ----
     for( const std::unique_ptr<CONDUIT>& c : m_conduits )
         c->SetCachedTotalLengthFt( c->GetTotalLengthFt( proj.m_LayerDepthsInches ) );
@@ -669,9 +935,28 @@ void CONDUIT_SCHEMATIC_FRAME::syncCablesFromBoard()
             if( c->GetRoutePoints().size() < 2 )
                 continue;
             PCB_EDIT_FRAME::CONDUIT_ROUTE_INFO info;
-            info.layer  = c->GetRouteLayer();
-            info.points = c->GetRoutePoints();
-            info.label  = c->GetName();
+            info.layer        = c->GetRouteLayer();
+            info.points       = c->GetRoutePoints();
+            info.bendRadiusIu = c->GetFilletRadiusIu();
+            info.widthIu      = GetConduitHalfWidthIu( c->GetName() ) * 2;
+            info.faulty       = c->IsFaulty();
+            info.label        = c->GetName();
+
+            // Anchor lines: footprint origin → the anchored endpoint.
+            if( m_board )
+            {
+                if( c->HasStartAnchor() )
+                    if( FOOTPRINT* fp = findFootprintByUuid( m_board, c->GetStartAnchor() ) )
+                        info.anchorLines.emplace_back(
+                                wxPoint( fp->GetPosition().x, fp->GetPosition().y ),
+                                c->GetRoutePoints().front() );
+                if( c->HasEndAnchor() )
+                    if( FOOTPRINT* fp = findFootprintByUuid( m_board, c->GetEndAnchor() ) )
+                        info.anchorLines.emplace_back(
+                                wxPoint( fp->GetPosition().x, fp->GetPosition().y ),
+                                c->GetRoutePoints().back() );
+            }
+
             routes.push_back( std::move( info ) );
         }
         pcbFrame->UpdateConduitOverlay( routes );
@@ -1520,12 +1805,23 @@ bool CONDUIT_SCHEMATIC_FRAME::saveToFile( const wxString& aPath )
         cj[ "pos_x" ]             = c->GetPosX();
         cj[ "pos_y" ]             = c->GetPosY();
         cj[ "route_layer" ]       = c->GetRouteLayer();
+        cj[ "bend_radius_iu" ]    = c->GetFilletRadiusIu();
         cj[ "horizontal_length_ft" ] = c->GetHorizontalLengthFt();
 
         nlohmann::json points = nlohmann::json::array();
         for( const wxPoint& p : c->GetRoutePoints() )
             points.push_back( { p.x, p.y } );
         cj[ "route_points" ] = points;
+
+        // Equipment anchors (Phase 4.F.4)
+        cj[ "has_start_anchor" ] = c->HasStartAnchor();
+        cj[ "start_anchor" ]     = c->GetStartAnchor().AsStdString();
+        cj[ "start_offset" ]     = { c->GetStartOffset().x, c->GetStartOffset().y };
+        cj[ "has_end_anchor" ]   = c->HasEndAnchor();
+        cj[ "end_anchor" ]       = c->GetEndAnchor().AsStdString();
+        cj[ "end_offset" ]       = { c->GetEndOffset().x, c->GetEndOffset().y };
+        cj[ "faulty" ]           = c->IsFaulty();
+
         cj[ "cables" ]            = nlohmann::json::array();
 
         for( const CABLE* cable : c->GetCables() )
@@ -1612,6 +1908,7 @@ bool CONDUIT_SCHEMATIC_FRAME::loadFromFile( const wxString& aPath )
             conduit->SetPosition( cj.value( "pos_x", 50 ),
                                   cj.value( "pos_y", 50 ) );
             conduit->SetRouteLayer( cj.value( "route_layer", -1 ) );
+            conduit->SetFilletRadiusIu( cj.value( "bend_radius_iu", 0.0 ) );
             conduit->SetHorizontalLengthFt( cj.value( "horizontal_length_ft", 0.0 ) );
 
             if( cj.contains( "route_points" ) && cj[ "route_points" ].is_array() )
@@ -1625,6 +1922,23 @@ bool CONDUIT_SCHEMATIC_FRAME::loadFromFile( const wxString& aPath )
                 if( !pts.empty() )
                     conduit->SetRoutePoints( std::move( pts ) );
             }
+
+            // Equipment anchors (Phase 4.F.4)
+            auto readOffset = [&]( const char* aKey ) -> wxPoint
+            {
+                if( cj.contains( aKey ) && cj[ aKey ].is_array() && cj[ aKey ].size() == 2 )
+                    return wxPoint( cj[ aKey ][ 0 ].get<int>(), cj[ aKey ][ 1 ].get<int>() );
+                return wxPoint( 0, 0 );
+            };
+            if( cj.value( "has_start_anchor", false ) )
+                conduit->SetStartAnchor( KIID( wxString::FromUTF8(
+                        cj.value( "start_anchor", std::string() ).c_str() ) ),
+                        readOffset( "start_offset" ) );
+            if( cj.value( "has_end_anchor", false ) )
+                conduit->SetEndAnchor( KIID( wxString::FromUTF8(
+                        cj.value( "end_anchor", std::string() ).c_str() ) ),
+                        readOffset( "end_offset" ) );
+            conduit->SetFaulty( cj.value( "faulty", false ) );
 
             if( cj.contains( "cables" ) && cj[ "cables" ].is_array() )
             {

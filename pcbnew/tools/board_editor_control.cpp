@@ -29,7 +29,10 @@
 #include <site_layout/dialog_layer_depths.h>
 #include <site_layout/dialog_conduit_specs.h>
 #include <view/view_overlay.h>
+#include <view/view.h>
+#include <gal/graphics_abstraction_layer.h>
 #include <wx/choicdlg.h>
+#include <wx/menu.h>
 #include <geometry/seg.h>
 
 #include <algorithm>
@@ -2338,11 +2341,13 @@ int BOARD_EDITOR_CONTROL::RouteConduit( const TOOL_EVENT& aEvent )
         return 0;
     }
 
-    std::vector<wxString> names = conduitFrame->GetConduitNames();
+    std::vector<wxString> names = conduitFrame->GetRoutableConduitNames();
     if( names.empty() )
     {
         wxMessageBox(
-                _( "No conduits defined. Add a conduit in the Conduit Schematic first." ),
+                _( "No routable conduits. A conduit must have a Conduit Spec assigned "
+                   "before it can be routed (the spec supplies bend radius, clearance, "
+                   "and max bend angle)." ),
                 _( "Route Conduit" ), wxICON_INFORMATION, frame );
         return 0;
     }
@@ -2359,10 +2364,41 @@ int BOARD_EDITOR_CONTROL::RouteConduit( const TOOL_EVENT& aEvent )
     wxString chosenName = picker.GetStringSelection();
     int      chosenLayer = static_cast<int>( frame->GetActiveLayer() );
 
+    // ---- Local-frame angle snapping ----------------------------------------
+    // Conduit segments snap to 22.5° increments (0 / 22.5 / 45 / 67.5 / 90 …),
+    // measured from the site-origin rotation rather than the global axes, so the
+    // local frame drives the geometry. The first point is placed freely (near the
+    // equipment); every subsequent point snaps relative to the previous one.
+    const double siteRotRad = frame->Prj().GetProjectFile().m_SiteOriginRotationDeg
+                              * M_PI / 180.0;
+    const double snapStepRad = M_PI / 8.0;   // 22.5°
+
+    auto snapToLocalAngle =
+            [&]( const VECTOR2I& aLast, const VECTOR2I& aCursor ) -> VECTOR2I
+            {
+                double dx = aCursor.x - aLast.x;
+                double dy = aCursor.y - aLast.y;
+                double len = std::hypot( dx, dy );
+
+                if( len < 1.0 )
+                    return aCursor;
+
+                // Snap the direction in the local frame, then rotate back to global.
+                double globalAng  = std::atan2( dy, dx );
+                double localAng   = globalAng - siteRotRad;
+                double snappedLoc = std::round( localAng / snapStepRad ) * snapStepRad;
+                double snappedAng = snappedLoc + siteRotRad;
+
+                return VECTOR2I( aLast.x + KiROUND( std::cos( snappedAng ) * len ),
+                                 aLast.y + KiROUND( std::sin( snappedAng ) * len ) );
+            };
+
     // ---- Collect existing routes for clearance checking ----
     auto existingRoutes = conduitFrame->GetAllRoutesForCollision( chosenName );
     int  myClearanceIu  = conduitFrame->GetConduitClearanceIu( chosenName );
     int  myHalfWidthIu  = conduitFrame->GetConduitHalfWidthIu( chosenName );
+    double myBendRadiusIu = conduitFrame->GetConduitBendRadiusIu( chosenName );
+    double myMaxBendDeg   = conduitFrame->GetConduitMaxBendAngleDeg( chosenName );
 
     // Returns true if the proposed segment (a→b) on aLayer would collide with any
     // existing route on the same layer, given combined clearance + half-widths.
@@ -2401,6 +2437,26 @@ int BOARD_EDITOR_CONTROL::RouteConduit( const TOOL_EVENT& aEvent )
 
     std::vector<wxPoint> points;
 
+    // Deflection (degrees) the proposed segment would create at the last committed
+    // point. 0 = straight ahead. Needs at least two prior points to form a corner.
+    auto bendAt = [&]( const VECTOR2I& aCursor ) -> double
+    {
+        if( points.size() < 2 )
+            return 0.0;
+
+        VECTOR2D d1( points.back().x - points[points.size() - 2].x,
+                     points.back().y - points[points.size() - 2].y );
+        VECTOR2D d2( aCursor.x - points.back().x, aCursor.y - points.back().y );
+
+        double l1 = d1.EuclideanNorm();
+        double l2 = d2.EuclideanNorm();
+        if( l1 < 1.0 || l2 < 1.0 )
+            return 0.0;
+
+        double c = std::clamp( ( d1.x * d2.x + d1.y * d2.y ) / ( l1 * l2 ), -1.0, 1.0 );
+        return std::acos( c ) * 180.0 / M_PI;
+    };
+
     auto redrawPreview = [&]( const VECTOR2I& aCursor, bool aIncludeRubberBand )
     {
         preview->Clear();
@@ -2408,21 +2464,26 @@ int BOARD_EDITOR_CONTROL::RouteConduit( const TOOL_EVENT& aEvent )
         preview->SetIsFill( false );
         preview->SetLineWidth( 200000 );
 
-        // Already-committed segments — orange, never check (they were committed knowingly)
+        // Already-committed segments — orange, never check (they were committed knowingly).
+        // Filleted at the conduit's bend radius so the preview matches the final geometry.
         preview->SetStrokeColor( KIGFX::COLOR4D( 0.9, 0.5, 0.1, 1.0 ) );
-        for( size_t i = 1; i < points.size(); ++i )
-        {
-            preview->Line( VECTOR2I( points[i - 1].x, points[i - 1].y ),
-                           VECTOR2I( points[i].x,     points[i].y ) );
-        }
+        std::vector<VECTOR2I> centers;
+        centers.reserve( points.size() );
+        for( const wxPoint& p : points )
+            centers.emplace_back( p.x, p.y );
+
+        std::vector<VECTOR2I> flat = BuildFilletedPolyline( centers, myBendRadiusIu );
+        for( size_t i = 1; i < flat.size(); ++i )
+            preview->Line( flat[i - 1], flat[i] );
 
         // Rubber-band segment — red if it would collide, orange otherwise.
         if( aIncludeRubberBand && !points.empty() )
         {
             VECTOR2I lastPt( points.back().x, points.back().y );
-            bool     collide = wouldCollide( lastPt, aCursor );
-            preview->SetStrokeColor( collide ? KIGFX::COLOR4D( 0.9, 0.1, 0.1, 1.0 )
-                                             : KIGFX::COLOR4D( 0.9, 0.5, 0.1, 1.0 ) );
+            bool     bad = wouldCollide( lastPt, aCursor )
+                           || bendAt( aCursor ) > myMaxBendDeg + 1e-6;
+            preview->SetStrokeColor( bad ? KIGFX::COLOR4D( 0.9, 0.1, 0.1, 1.0 )
+                                         : KIGFX::COLOR4D( 0.9, 0.5, 0.1, 1.0 ) );
             preview->Line( lastPt, aCursor );
         }
         view->Update( preview.get() );
@@ -2441,7 +2502,14 @@ int BOARD_EDITOR_CONTROL::RouteConduit( const TOOL_EVENT& aEvent )
 
     while( TOOL_EVENT* evt = Wait() )
     {
-        VECTOR2I cursorPos = getViewControls()->GetCursorPosition();
+        VECTOR2I rawCursor = getViewControls()->GetCursorPosition();
+
+        // Snap relative to the last committed point (first point is placed freely).
+        VECTOR2I cursorPos = points.empty()
+                                     ? rawCursor
+                                     : snapToLocalAngle(
+                                               VECTOR2I( points.back().x, points.back().y ),
+                                               rawCursor );
 
         if( evt->IsCancelInteractive() )
         {
@@ -2460,10 +2528,20 @@ int BOARD_EDITOR_CONTROL::RouteConduit( const TOOL_EVENT& aEvent )
             if( !points.empty() )
             {
                 VECTOR2I lastPt( points.back().x, points.back().y );
+                double   bend = bendAt( cursorPos );
+
                 if( wouldCollide( lastPt, cursorPos ) )
                 {
                     frame->SetStatusText(
                             _( "WARNING: segment violates conduit clearance on this layer" ),
+                            0 );
+                }
+                else if( bend > myMaxBendDeg + 1e-6 )
+                {
+                    frame->SetStatusText(
+                            wxString::Format(
+                                    _( "WARNING: bend %.1f° exceeds spec max %.1f°" ),
+                                    bend, myMaxBendDeg ),
                             0 );
                 }
                 else
@@ -2518,6 +2596,600 @@ int BOARD_EDITOR_CONTROL::RouteConduit( const TOOL_EVENT& aEvent )
                 frame->GetBoard()->GetLayerName(
                         static_cast<PCB_LAYER_ID>( chosenLayer ) ) ) );
     }
+
+    return 0;
+}
+
+
+// Shortest distance from point P to segment AB (all in IU).
+static double distPointToSeg( const VECTOR2D& aP, const VECTOR2D& aA, const VECTOR2D& aB )
+{
+    VECTOR2D ab = aB - aA;
+    double   len2 = ab.x * ab.x + ab.y * ab.y;
+    if( len2 < 1.0 )
+        return ( aP - aA ).EuclideanNorm();
+
+    double t = ( ( aP.x - aA.x ) * ab.x + ( aP.y - aA.y ) * ab.y ) / len2;
+    t = std::clamp( t, 0.0, 1.0 );
+    VECTOR2D proj( aA.x + t * ab.x, aA.y + t * ab.y );
+    return ( aP - proj ).EuclideanNorm();
+}
+
+
+int BOARD_EDITOR_CONTROL::EditConduitRoute( const TOOL_EVENT& aEvent )
+{
+    PCB_EDIT_FRAME* frame = getEditFrame<PCB_EDIT_FRAME>();
+
+    // Triggered by a double-click on the canvas, so stay silent (no dialogs) unless
+    // we actually land on a conduit.
+    CONDUIT_SCHEMATIC_FRAME* conduitFrame = dynamic_cast<CONDUIT_SCHEMATIC_FRAME*>(
+            wxWindow::FindWindowByName( CONDUIT_SCHEMATIC_FRAME_NAME ) );
+
+    if( !conduitFrame )
+        return 0;
+
+    std::vector<wxString> names = conduitFrame->GetRoutedConduitNames();
+    if( names.empty() )
+        return 0;
+
+    KIGFX::VIEW* view = frame->GetCanvas()->GetView();
+
+    // Screen-constant sizes: convert a pixel size to IU using the world scale.
+    auto pxToIu = [&]( double aPx ) -> double
+    {
+        double scale = view->GetGAL()->GetWorldScale();
+        return scale > 0.0 ? aPx / scale : aPx * 1000.0;
+    };
+
+    // Pick the routed conduit nearest the cursor. The clickable band scales with the
+    // conduit's drawn width (so you can grab anywhere on the conduit body), with a
+    // small pixel floor so thin conduits are still easy to hit.
+    VECTOR2I cursor0 = getViewControls()->GetCursorPosition();
+    double   bestDist = 1e18;
+    wxString chosenName;
+    int      chosenLayer = -1;
+    std::vector<wxPoint> points;
+
+    for( const wxString& n : names )
+    {
+        int                  layer = -1;
+        std::vector<wxPoint> pts;
+        if( !conduitFrame->GetConduitRoute( n, layer, pts ) || pts.size() < 2 )
+            continue;
+
+        double tol = std::max( pxToIu( 10.0 ),
+                               conduitFrame->GetConduitHalfWidthIu( n ) + pxToIu( 4.0 ) );
+
+        std::vector<VECTOR2I> centers;
+        for( const wxPoint& p : pts )
+            centers.emplace_back( p.x, p.y );
+
+        std::vector<VECTOR2I> flat =
+                BuildFilletedPolyline( centers, conduitFrame->GetConduitBendRadiusIu( n ) );
+
+        for( size_t i = 1; i < flat.size(); ++i )
+        {
+            double d = distPointToSeg( VECTOR2D( cursor0.x, cursor0.y ),
+                                       VECTOR2D( flat[i - 1].x, flat[i - 1].y ),
+                                       VECTOR2D( flat[i].x, flat[i].y ) );
+            if( d <= tol && d < bestDist )
+            {
+                bestDist    = d;
+                chosenName  = n;
+                chosenLayer = layer;
+                points      = pts;
+            }
+        }
+    }
+
+    if( chosenName.IsEmpty() )
+        return 0;     // cursor wasn't over a conduit
+
+    // Anchor state at entry + original endpoints, so we can drop an anchor whose
+    // endpoint changes during this edit (rule: endpoint changes ⇒ anchor reassigned).
+    bool    startAnchored = false, endAnchored = false;
+    conduitFrame->GetConduitAnchorFlags( chosenName, startAnchored, endAnchored );
+    wxPoint origFront = points.front();
+    wxPoint origBack  = points.back();
+    bool    removeStart = false, removeEnd = false;   // explicit "Remove Anchor"
+
+    std::shared_ptr<KIGFX::VIEW_OVERLAY> overlay = view->MakeOverlay();
+
+    int dragIdx = -1;
+
+    // Snapshot taken when a drag begins: original node positions + segment unit
+    // directions. The shove keeps these directions fixed (so snapped angles never
+    // drift) and slides neighbours to absorb the dragged node's motion.
+    std::vector<wxPoint>  startPoints;
+    bool                  editFaulty = false;   // last drag couldn't keep angles
+
+    auto captureDragStart = [&]() { startPoints = points; };
+
+    // Move node aIdx to aTarget keeping every angle fixed and the FAR endpoint (the
+    // one farther from aIdx) pinned; only segment lengths change. If it can't be
+    // solved (stretched too far), snap the node to the cursor and flag faulty (red).
+    auto applyShove = [&]( int aIdx, const VECTOR2I& aTarget )
+    {
+        points = startPoints;
+        const int sz = (int) startPoints.size();
+        bool fixedIsLast = ( aIdx * 2 <= sz - 1 );   // pin the farther endpoint
+
+        if( !SolveRoutePreserveAngles( points, aIdx,
+                                       wxPoint( aTarget.x, aTarget.y ), fixedIsLast ) )
+        {
+            points = startPoints;
+            points[aIdx] = wxPoint( aTarget.x, aTarget.y );
+            editFaulty = true;
+        }
+        else
+        {
+            editFaulty = false;
+        }
+    };
+
+    // ---- Extend mode: click an endpoint to route more conduit from that end ----
+    bool     extending    = false;
+    bool     extendAtFront = false;   // true = prepend at points.front(), else append
+    VECTOR2I extendCursor;            // current (snapped) rubber-band tip
+
+    // Local-frame 22.5° snapping relative to a fixed previous point.
+    const double siteRotRad = frame->Prj().GetProjectFile().m_SiteOriginRotationDeg
+                              * M_PI / 180.0;
+    auto snapToLocalAngle = [&]( const VECTOR2I& aLast, const VECTOR2I& aCursor ) -> VECTOR2I
+    {
+        double dx = aCursor.x - aLast.x;
+        double dy = aCursor.y - aLast.y;
+        double len = std::hypot( dx, dy );
+        if( len < 1.0 )
+            return aCursor;
+
+        double globalAng  = std::atan2( dy, dx );
+        double localAng   = globalAng - siteRotRad;
+        double snappedLoc = std::round( localAng / ( M_PI / 8.0 ) ) * ( M_PI / 8.0 );
+        double snappedAng = snappedLoc + siteRotRad;
+        return VECTOR2I( aLast.x + KiROUND( std::cos( snappedAng ) * len ),
+                         aLast.y + KiROUND( std::sin( snappedAng ) * len ) );
+    };
+
+    auto redraw = [&]()
+    {
+        overlay->Clear();
+
+        // Route polyline as STRAIGHT virtual-center segments (fillets are applied
+        // only to the committed route, not during editing).
+        overlay->SetIsStroke( true );
+        overlay->SetIsFill( false );
+        overlay->SetLineWidth( (int) pxToIu( 2.0 ) );
+        overlay->SetStrokeColor( editFaulty ? KIGFX::COLOR4D( 0.9, 0.1, 0.1, 1.0 )
+                                            : KIGFX::COLOR4D( 0.9, 0.5, 0.1, 1.0 ) );
+
+        for( size_t i = 1; i < points.size(); ++i )
+            overlay->Line( VECTOR2I( points[i - 1].x, points[i - 1].y ),
+                           VECTOR2I( points[i].x, points[i].y ) );
+
+        // Rubber-band for the segment being extended.
+        if( extending )
+        {
+            const wxPoint& tip = extendAtFront ? points.front() : points.back();
+            overlay->SetStrokeColor( KIGFX::COLOR4D( 0.9, 0.5, 0.1, 1.0 ) );
+            overlay->Line( VECTOR2I( tip.x, tip.y ), extendCursor );
+        }
+
+        // Node handles — filled squares; the one being dragged is highlighted.
+        double h = pxToIu( 4.0 );
+        for( size_t i = 0; i < points.size(); ++i )
+        {
+            overlay->SetIsFill( true );
+            overlay->SetIsStroke( false );
+            overlay->SetFillColor( (int) i == dragIdx
+                                           ? KIGFX::COLOR4D( 1.0, 1.0, 0.2, 1.0 )
+                                           : KIGFX::COLOR4D( 0.2, 0.8, 1.0, 1.0 ) );
+            overlay->Rectangle( VECTOR2I( points[i].x - h, points[i].y - h ),
+                                VECTOR2I( points[i].x + h, points[i].y + h ) );
+        }
+
+        view->Update( overlay.get() );
+        frame->GetCanvas()->ForceRefresh();
+    };
+
+    // Return the index of the node under the cursor, or -1.
+    auto hitNode = [&]( const VECTOR2I& aCursor ) -> int
+    {
+        double grab = pxToIu( 8.0 );
+        for( size_t i = 0; i < points.size(); ++i )
+        {
+            double dx = aCursor.x - points[i].x;
+            double dy = aCursor.y - points[i].y;
+            if( std::hypot( dx, dy ) <= grab )
+                return (int) i;
+        }
+        return -1;
+    };
+
+    // Return the index of the segment (i → i+1) under the cursor, or -1.
+    auto hitSegment = [&]( const VECTOR2I& aCursor ) -> int
+    {
+        double grab = pxToIu( 6.0 );
+        int    best = -1;
+        for( size_t i = 1; i < points.size(); ++i )
+        {
+            double d = distPointToSeg( VECTOR2D( aCursor.x, aCursor.y ),
+                                       VECTOR2D( points[i - 1].x, points[i - 1].y ),
+                                       VECTOR2D( points[i].x, points[i].y ) );
+            if( d <= grab ) { grab = d; best = (int) i - 1; }
+        }
+        return best;
+    };
+
+    frame->PushTool( aEvent );
+    Activate();
+    getViewControls()->ShowCursor( true );
+    frame->GetCanvas()->SetCurrentCursor( KICURSOR::ARROW );
+    frame->SetStatusText( _( "Drag a node to reshape  ·  click an end to extend  ·  "
+                             "right-click to delete  ·  Esc when done" ), 0 );
+    redraw();
+
+    bool nodeDragged = false;   // a node drag just completed
+
+    // Apply the current geometry to the conduit immediately (live update) and drop
+    // any anchor whose endpoint changed. Re-baselines so repeated applies are clean.
+    auto applyNow = [&]()
+    {
+        if( points.size() < 2 )
+            return;
+
+        bool clrStart = removeStart || ( startAnchored && points.front() != origFront );
+        bool clrEnd   = removeEnd   || ( endAnchored && points.back() != origBack );
+
+        conduitFrame->SetConduitRoute( chosenName, chosenLayer, points );
+        if( clrStart ) { conduitFrame->RemoveConduitAnchor( chosenName, true );  startAnchored = false; }
+        if( clrEnd )   { conduitFrame->RemoveConduitAnchor( chosenName, false ); endAnchored = false; }
+
+        removeStart = removeEnd = false;
+        origFront = points.front();
+        origBack  = points.back();
+    };
+
+    while( TOOL_EVENT* evt = Wait() )
+    {
+        VECTOR2I cursorPos = getViewControls()->GetCursorPosition();
+
+        if( evt->IsCancelInteractive() || evt->IsActivate() )
+        {
+            break;                   // done — edits were applied live as you made them
+        }
+        else if( evt->IsClick( BUT_RIGHT ) )
+        {
+            // Context menu for deleting nodes / sections / anchors / the whole route.
+            enum { ID_DEL_NODE = 1, ID_DEL_SECTION, ID_REMOVE_ANCHOR, ID_DELETE_ROUTE };
+            int nodeHit = hitNode( cursorPos );
+            int segHit  = ( nodeHit < 0 ) ? hitSegment( cursorPos ) : -1;
+            int last    = (int) points.size() - 1;
+
+            wxMenu menu;
+            if( nodeHit >= 0 )
+            {
+                if( points.size() > 2 )
+                    menu.Append( ID_DEL_NODE, _( "Delete Node" ) );
+                if( ( nodeHit == 0 && startAnchored && !removeStart )
+                    || ( nodeHit == last && endAnchored && !removeEnd ) )
+                    menu.Append( ID_REMOVE_ANCHOR, _( "Remove Anchor" ) );
+            }
+            else if( segHit >= 0 )
+            {
+                menu.Append( ID_DEL_SECTION, _( "Delete Section" ) );
+            }
+            if( menu.GetMenuItemCount() > 0 )
+                menu.AppendSeparator();
+            menu.Append( ID_DELETE_ROUTE, _( "Delete Entire Conduit Route" ) );
+
+            int sel = frame->GetCanvas()->GetPopupMenuSelectionFromUser( menu );
+
+            if( sel == ID_DEL_NODE && nodeHit >= 0 && points.size() > 2 )
+            {
+                if( nodeHit == 0 && startAnchored )    removeStart = true;
+                if( nodeHit == last && endAnchored )   removeEnd = true;
+                points.erase( points.begin() + nodeHit );
+                applyNow();
+                redraw();
+            }
+            else if( sel == ID_REMOVE_ANCHOR )
+            {
+                if( nodeHit == 0 )    removeStart = true;
+                if( nodeHit == last ) removeEnd = true;
+                applyNow();
+                redraw();
+            }
+            else if( sel == ID_DEL_SECTION && segHit >= 0 )
+            {
+                if( points.size() <= 2 )
+                {
+                    conduitFrame->ClearConduitRoute( chosenName );
+                    break;
+                }
+                else if( segHit == 0 )
+                {
+                    if( startAnchored ) removeStart = true;
+                    points.erase( points.begin() );
+                }
+                else if( segHit == last - 1 )
+                {
+                    if( endAnchored ) removeEnd = true;
+                    points.pop_back();
+                }
+                else
+                {
+                    points.erase( points.begin() + segHit + 1 );
+                }
+                applyNow();
+                redraw();
+            }
+            else if( sel == ID_DELETE_ROUTE )
+            {
+                conduitFrame->ClearConduitRoute( chosenName );
+                break;
+            }
+            // otherwise: menu dismissed — keep editing
+        }
+        else if( evt->IsDblClick( BUT_LEFT ) )
+        {
+            break;                   // done
+        }
+        else if( evt->IsClick( BUT_LEFT ) )
+        {
+            if( extending )
+            {
+                // Append/prepend a snapped point and keep going.
+                const wxPoint& tip = extendAtFront ? points.front() : points.back();
+                VECTOR2I snapped = snapToLocalAngle( VECTOR2I( tip.x, tip.y ), cursorPos );
+
+                if( extendAtFront )
+                    points.insert( points.begin(), wxPoint( snapped.x, snapped.y ) );
+                else
+                    points.emplace_back( snapped.x, snapped.y );
+
+                applyNow();          // live update as each section is added
+                redraw();
+            }
+            else
+            {
+                // Click on an endpoint starts extending from that end.
+                int hit = hitNode( cursorPos );
+                if( hit == 0 || hit == (int) points.size() - 1 )
+                {
+                    extending     = true;
+                    extendAtFront = ( hit == 0 );
+                    extendCursor  = cursorPos;
+                    frame->SetStatusText(
+                            _( "Extending: click to add points  ·  Double-click to save  ·  "
+                               "Esc to cancel" ), 0 );
+                    redraw();
+                }
+            }
+        }
+        else if( evt->IsDrag( BUT_LEFT ) && !extending )
+        {
+            if( dragIdx < 0 )
+            {
+                dragIdx = hitNode( evt->DragOrigin() );
+                if( dragIdx >= 0 )
+                    captureDragStart();
+            }
+
+            if( dragIdx >= 0 )
+            {
+                applyShove( dragIdx, cursorPos );
+                nodeDragged = true;
+                redraw();
+            }
+            else
+            {
+                evt->SetPassEvent();
+            }
+        }
+        else if( evt->IsMouseUp( BUT_LEFT ) )
+        {
+            if( nodeDragged )
+            {
+                applyNow();          // commit the drag immediately; stay in edit mode
+                nodeDragged = false;
+            }
+            dragIdx = -1;
+            redraw();
+        }
+        else if( evt->IsMotion() )
+        {
+            if( extending )
+            {
+                const wxPoint& tip = extendAtFront ? points.front() : points.back();
+                extendCursor = snapToLocalAngle( VECTOR2I( tip.x, tip.y ), cursorPos );
+                redraw();
+            }
+        }
+        else
+        {
+            evt->SetPassEvent();
+        }
+    }
+
+    view->Remove( overlay.get() );
+    overlay.reset();
+
+    getViewControls()->ShowCursor( false );
+    frame->GetCanvas()->SetCurrentCursor( KICURSOR::ARROW );
+    frame->SetStatusText( wxEmptyString, 0 );
+    frame->PopTool( aEvent );
+    frame->GetCanvas()->ForceRefresh();
+
+    return 0;
+}
+
+
+int BOARD_EDITOR_CONTROL::AnchorConduit( const TOOL_EVENT& aEvent )
+{
+    PCB_EDIT_FRAME* frame = getEditFrame<PCB_EDIT_FRAME>();
+
+    CONDUIT_SCHEMATIC_FRAME* conduitFrame = dynamic_cast<CONDUIT_SCHEMATIC_FRAME*>(
+            wxWindow::FindWindowByName( CONDUIT_SCHEMATIC_FRAME_NAME ) );
+
+    if( !conduitFrame )
+    {
+        wxMessageBox( _( "Open the Conduit Schematic first, then anchor conduits." ),
+                      _( "Anchor Conduit" ), wxICON_INFORMATION, frame );
+        return 0;
+    }
+
+    std::vector<wxString> names = conduitFrame->GetRoutedConduitNames();
+    if( names.empty() )
+    {
+        wxMessageBox( _( "No routed conduits to anchor. Route a conduit first." ),
+                      _( "Anchor Conduit" ), wxICON_INFORMATION, frame );
+        return 0;
+    }
+
+    KIGFX::VIEW* view = frame->GetCanvas()->GetView();
+    auto pxToIu = [&]( double aPx ) -> double
+    {
+        double scale = view->GetGAL()->GetWorldScale();
+        return scale > 0.0 ? aPx / scale : aPx * 1000.0;
+    };
+
+    // Find the conduit endpoint nearest the cursor (within tolerance).
+    // Returns true and sets outputs if one is found.
+    auto pickEndpoint = [&]( const VECTOR2I& aCursor, wxString& aName, bool& aAtFront ) -> bool
+    {
+        double   best = pxToIu( 12.0 );
+        bool     found = false;
+        for( const wxString& n : names )
+        {
+            int                  layer = -1;
+            std::vector<wxPoint> pts;
+            if( !conduitFrame->GetConduitRoute( n, layer, pts ) || pts.size() < 2 )
+                continue;
+
+            double df = std::hypot( aCursor.x - pts.front().x, aCursor.y - pts.front().y );
+            double db = std::hypot( aCursor.x - pts.back().x,  aCursor.y - pts.back().y );
+            if( df < best ) { best = df; aName = n; aAtFront = true;  found = true; }
+            if( db < best ) { best = db; aName = n; aAtFront = false; found = true; }
+        }
+        return found;
+    };
+
+    wxString chosenName;
+    bool     atFront = false;
+    bool     havePick = false;
+
+    // Draw a marker at every routed conduit endpoint so they're visible/clickable.
+    // The picked endpoint (after the first click) is highlighted.
+    std::shared_ptr<KIGFX::VIEW_OVERLAY> overlay = view->MakeOverlay();
+
+    auto redrawHandles = [&]()
+    {
+        overlay->Clear();
+        double h = pxToIu( 5.0 );
+
+        for( const wxString& n : names )
+        {
+            int                  layer = -1;
+            std::vector<wxPoint> pts;
+            if( !conduitFrame->GetConduitRoute( n, layer, pts ) || pts.size() < 2 )
+                continue;
+
+            for( bool front : { true, false } )
+            {
+                const wxPoint& p = front ? pts.front() : pts.back();
+                bool picked = havePick && n == chosenName && front == atFront;
+
+                overlay->SetIsFill( true );
+                overlay->SetIsStroke( true );
+                overlay->SetLineWidth( (int) pxToIu( 1.0 ) );
+                overlay->SetStrokeColor( KIGFX::COLOR4D( 0, 0, 0, 1 ) );
+                overlay->SetFillColor( picked ? KIGFX::COLOR4D( 1.0, 1.0, 0.2, 1.0 )
+                                              : KIGFX::COLOR4D( 0.2, 0.9, 0.5, 1.0 ) );
+                overlay->Rectangle( VECTOR2I( p.x - h, p.y - h ),
+                                    VECTOR2I( p.x + h, p.y + h ) );
+            }
+        }
+
+        view->Update( overlay.get() );
+        frame->GetCanvas()->ForceRefresh();
+    };
+
+    frame->PushTool( aEvent );
+    Activate();
+    getViewControls()->ShowCursor( true );
+    frame->GetCanvas()->SetCurrentCursor( KICURSOR::ARROW );
+    frame->SetStatusText( _( "Click a green conduit endpoint to anchor  ·  Esc to cancel" ),
+                          0 );
+    redrawHandles();
+
+    while( TOOL_EVENT* evt = Wait() )
+    {
+        VECTOR2I cursorPos = getViewControls()->GetCursorPosition();
+
+        if( evt->IsCancelInteractive() || evt->IsActivate() || evt->IsClick( BUT_RIGHT ) )
+        {
+            break;
+        }
+        else if( evt->IsClick( BUT_LEFT ) )
+        {
+            if( !havePick )
+            {
+                if( pickEndpoint( cursorPos, chosenName, atFront ) )
+                {
+                    havePick = true;
+                    redrawHandles();
+                    frame->SetStatusText(
+                            _( "Now click the equipment (footprint) to anchor to  ·  "
+                               "Esc to cancel" ), 0 );
+                }
+            }
+            else
+            {
+                // Layer-agnostic hit-test: BOARD::GetFootprint only returns footprints
+                // on the active layer's board side, which fails when routing on an
+                // inner/back layer while equipment sits on the front. Pick the
+                // smallest footprint whose bounding box contains the cursor.
+                FOOTPRINT* fp = nullptr;
+                double     bestArea = 0.0;
+                for( FOOTPRINT* cand : frame->GetBoard()->Footprints() )
+                {
+                    BOX2I bb = cand->GetBoundingBox( false );
+                    if( !bb.Contains( cursorPos ) )
+                        continue;
+                    double area = (double) bb.GetWidth() * (double) bb.GetHeight();
+                    if( !fp || area < bestArea ) { bestArea = area; fp = cand; }
+                }
+
+                if( fp )
+                {
+                    conduitFrame->AnchorConduitEnd(
+                            chosenName, atFront, fp->m_Uuid,
+                            wxPoint( fp->GetPosition().x, fp->GetPosition().y ) );
+                    frame->SetStatusText( wxString::Format(
+                            _( "Anchored '%s' to %s" ), chosenName, fp->GetReference() ), 0 );
+                    break;
+                }
+                else
+                {
+                    frame->SetStatusText(
+                            _( "No footprint there — click on a piece of equipment" ), 0 );
+                }
+            }
+        }
+        else
+        {
+            evt->SetPassEvent();
+        }
+    }
+
+    view->Remove( overlay.get() );
+    overlay.reset();
+
+    getViewControls()->ShowCursor( false );
+    frame->GetCanvas()->SetCurrentCursor( KICURSOR::ARROW );
+    frame->PopTool( aEvent );
+    frame->GetCanvas()->ForceRefresh();
 
     return 0;
 }
@@ -2682,6 +3354,8 @@ void BOARD_EDITOR_CONTROL::setTransitions()
     Go( &BOARD_EDITOR_CONTROL::ConduitTest,            PCB_ACTIONS::conduitTest.MakeEvent() );
     Go( &BOARD_EDITOR_CONTROL::CableSpecsFromPcb,      PCB_ACTIONS::cableSpecsFromPcb.MakeEvent() );
     Go( &BOARD_EDITOR_CONTROL::RouteConduit,           PCB_ACTIONS::routeConduit.MakeEvent() );
+    Go( &BOARD_EDITOR_CONTROL::EditConduitRoute,       PCB_ACTIONS::editConduitRoute.MakeEvent() );
+    Go( &BOARD_EDITOR_CONTROL::AnchorConduit,          PCB_ACTIONS::anchorConduit.MakeEvent() );
     Go( &BOARD_EDITOR_CONTROL::SiteOrigin,             PCB_ACTIONS::siteOrigin.MakeEvent() );
     Go( &BOARD_EDITOR_CONTROL::ToggleGlobalFrame,      PCB_ACTIONS::toggleGlobalFrame.MakeEvent() );
     Go( &BOARD_EDITOR_CONTROL::LayerDepths,            PCB_ACTIONS::layerDepths.MakeEvent() );

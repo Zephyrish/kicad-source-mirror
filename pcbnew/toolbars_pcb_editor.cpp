@@ -362,6 +362,7 @@ std::optional<TOOLBAR_CONFIGURATION> PCB_EDIT_TOOLBAR_SETTINGS::DefaultToolbarCo
         config.AppendAction( PCB_ACTIONS::cableSpecsFromPcb );
         config.AppendAction( PCB_ACTIONS::conduitSpecs );
         config.AppendAction( PCB_ACTIONS::routeConduit );
+        config.AppendAction( PCB_ACTIONS::anchorConduit );
         config.AppendControl( PCB_ACTION_TOOLBAR_CONTROLS::currentVariant );
         config.AppendControl( ACTION_TOOLBAR_CONTROLS::ipcScripting );
 

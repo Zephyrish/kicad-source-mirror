@@ -437,6 +437,8 @@ void PCB_EDIT_FRAME::doReCreateMenuBar()
     toolsMenu->AppendSeparator();
     toolsMenu->Add( PCB_ACTIONS::conduitTest );
     toolsMenu->Add( PCB_ACTIONS::routeConduit );
+    toolsMenu->Add( PCB_ACTIONS::anchorConduit );
+    // editConduitRoute is invoked by double-clicking a conduit, not from the menu.
 
     // Site Layout settings
     toolsMenu->AppendSeparator();

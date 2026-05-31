@@ -37,6 +37,14 @@
 #include <advanced_config.h>
 #include <base_units.h>
 #include <board.h>
+#include <project.h>
+#include <project/project_file.h>
+#include "site_layout/site_origin.h"
+#include <view/view.h>
+#include <gal/graphics_abstraction_layer.h>
+
+#include <algorithm>
+#include <cmath>
 #include <cleanup_item.h>
 #include <collectors.h>
 #include <confirm.h>
@@ -763,6 +771,53 @@ GENERAL_COLLECTORS_GUIDE PCB_BASE_FRAME::GetCollectorsGuide()
 }
 
 
+void PCB_BASE_FRAME::SetShowGlobalFrame( bool aGlobal )
+{
+    m_showGlobalFrame = aGlobal;
+
+    // Apply GAL rotation: in Global mode rotate the world so True North aligns with
+    // screen "up". Site rotation is bearing of local +Y CW from North, so we rotate
+    // the world by -rotation_deg (clockwise) — which is negative CCW in GAL.
+    //
+    // NOTE: KiCad's rendering pipeline (culling, layer compositing, ratsnest, etc.)
+    // doesn't fully account for view rotation. Large angles can produce visual artifacts
+    // (red fills, missing items, stretched arcs). The 45° clamp keeps things usable;
+    // for sites that need a steeper bearing, the math is correct — only the rendering
+    // is degraded. Toggle off Global Frame and back on after editing rotation.
+    constexpr double SAFE_MAX_DEG = 45.0;
+
+    if( PCB_DRAW_PANEL_GAL* canvas = GetCanvas() )
+    {
+        if( KIGFX::VIEW* view = canvas->GetView() )
+        {
+            double theta = 0.0;
+            if( aGlobal )
+            {
+                PROJECT_FILE& proj = Prj().GetProjectFile();
+                double deg = proj.m_SiteOriginRotationDeg;
+
+                // Wrap to [-180, 180] then clamp magnitude.
+                while( deg >  180.0 ) deg -= 360.0;
+                while( deg < -180.0 ) deg += 360.0;
+                if( std::abs( deg ) > SAFE_MAX_DEG )
+                {
+                    deg = std::clamp( deg, -SAFE_MAX_DEG, SAFE_MAX_DEG );
+                    SetStatusText( wxString::Format(
+                            _( "Global view rotation clamped to ±%g° — KiCad's renderer "
+                               "produces artifacts at higher angles." ),
+                            SAFE_MAX_DEG ), 0 );
+                }
+                theta = -deg * M_PI / 180.0;
+            }
+            view->GetGAL()->SetRotation( theta );
+            view->GetGAL()->ComputeWorldScreenMatrix();
+            view->MarkDirty();
+        }
+        canvas->ForceRefresh();
+    }
+}
+
+
 void PCB_BASE_FRAME::UpdateStatusBar()
 {
     EDA_DRAW_FRAME::UpdateStatusBar();
@@ -775,7 +830,41 @@ void PCB_BASE_FRAME::UpdateStatusBar()
     wxString line;
     VECTOR2D cursorPos = GetCanvas()->GetViewControls()->GetCursorPosition();
 
-    if( GetShowPolarCoords() )  // display polar coordinates
+    // Read site origin once. If configured, lat/lon takes over the third status field
+    // (replacing the dx/dy or polar display), where it has more room to be readable.
+    SITE_ORIGIN siteOrigin;
+    {
+        PROJECT_FILE& proj = Prj().GetProjectFile();
+        siteOrigin.latDeg      = proj.m_SiteOriginLat;
+        siteOrigin.lonDeg      = proj.m_SiteOriginLon;
+        siteOrigin.rotationDeg = proj.m_SiteOriginRotationDeg;
+    }
+    const bool showLatLon = siteOrigin.IsConfigured();
+
+    if( showLatLon )
+    {
+        GLOBAL_POINT g = LocalIuToGlobal( static_cast<double>( cursorPos.x ),
+                                          static_cast<double>( cursorPos.y ),
+                                          siteOrigin );
+
+        if( m_showGlobalFrame )
+        {
+            // East/North in world IU (math same as lat/lon, but stay in IU and format).
+            double theta = siteOrigin.rotationDeg * M_PI / 180.0;
+            double eastIu  =  cursorPos.x * std::cos( theta ) + cursorPos.y * std::sin( theta );
+            double northIu = -cursorPos.x * std::sin( theta ) + cursorPos.y * std::cos( theta );
+            line.Printf( wxT( "E %s  N %s   %.6f°, %.6f°" ),
+                         MessageTextFromValue( eastIu,  false ),
+                         MessageTextFromValue( northIu, false ),
+                         g.latDeg, g.lonDeg );
+        }
+        else
+        {
+            line.Printf( wxT( "Lat %.6f°  Lon %.6f°" ), g.latDeg, g.lonDeg );
+        }
+        SetStatusText( line, 3 );
+    }
+    else if( GetShowPolarCoords() )  // display polar coordinates
     {
         double   dx = cursorPos.x - screen->m_LocalOrigin.x;
         double   dy = cursorPos.y - screen->m_LocalOrigin.y;
@@ -799,7 +888,7 @@ void PCB_BASE_FRAME::UpdateStatusBar()
                  MessageTextFromValue( userYpos, false ) );
     SetStatusText( line, 2 );
 
-    if( !GetShowPolarCoords() )  // display relative cartesian coordinates
+    if( !showLatLon && !GetShowPolarCoords() )  // display relative cartesian coordinates
     {
         // Calculate relative coordinates
         double relXpos = cursorPos.x - screen->m_LocalOrigin.x;

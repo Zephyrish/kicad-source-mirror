@@ -142,7 +142,11 @@ public:
     struct CONDUIT_ROUTE_INFO
     {
         int                  layer;     // PCB_LAYER_ID
-        std::vector<wxPoint> points;
+        std::vector<wxPoint> points;    // "virtual center" vertices
+        double               bendRadiusIu = 0.0;   // fillet radius; 0 = sharp corners
+        int                  widthIu = 0;           // drawn width = conduit diameter (IU)
+        bool                 faulty = false;        // draw dashed when true
+        std::vector<std::pair<wxPoint, wxPoint>> anchorLines;  // footprint origin → endpoint
         wxString             label;     // conduit name, for tooltip/legend (future)
     };
     void UpdateConduitOverlay( const std::vector<CONDUIT_ROUTE_INFO>& aRoutes );
