@@ -173,6 +173,7 @@ public:
     static TOOL_ACTION schematicSetup;
     static TOOL_ACTION cableSpecs;
     static TOOL_ACTION showConduitSchematic;
+    static TOOL_ACTION showConduitSpecs;
     static TOOL_ACTION editPageNumber;
     static TOOL_ACTION checkSymbol;
     static TOOL_ACTION diffSymbol;

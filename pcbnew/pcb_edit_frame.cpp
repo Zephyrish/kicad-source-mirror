@@ -28,6 +28,8 @@
 
 #include <wx/log.h>
 #include <wx/filename.h>
+#include <fstream>
+#include <nlohmann/json.hpp>
 #include <wx/filedlg.h>
 #include <wx/hyperlink.h>
 #include <wx/socket.h>
@@ -72,6 +74,7 @@
 #include <board_text_var_adapter.h>
 #include <text_var_dependency.h>
 #include <view/view.h>
+#include <view/view_overlay.h>
 #include <wildcards_and_files_ext.h>
 #include <functional>
 #include <pcb_barcode.h>
@@ -1994,6 +1997,9 @@ void PCB_EDIT_FRAME::OnBoardLoaded()
     if( !Prj().IsNullProject() )
         Kiway().LocalHistory().Init( Prj().GetProjectPath() );
 
+    // Site Layout: re-paint the conduit overlay using whatever is saved in .kicad_cnd.
+    LoadConduitOverlayFromSidecar();
+
     ENUM_MAP<PCB_LAYER_ID>& layerEnum = ENUM_MAP<PCB_LAYER_ID>::Instance();
 
     layerEnum.Choices().Clear();
@@ -3606,4 +3612,104 @@ bool PCB_EDIT_FRAME::DoAutoSave()
 void PCB_EDIT_FRAME::OpenConduitSchematic()
 {
     GetToolManager()->RunAction( PCB_ACTIONS::conduitTest );
+}
+
+
+void PCB_EDIT_FRAME::OpenConduitSpecs()
+{
+    GetToolManager()->RunAction( PCB_ACTIONS::conduitSpecs );
+}
+
+
+void PCB_EDIT_FRAME::LoadConduitOverlayFromSidecar()
+{
+    // Derive .kicad_cnd path from board file
+    if( !GetBoard() || GetBoard()->GetFileName().IsEmpty() )
+        return;
+
+    wxFileName fn( GetBoard()->GetFileName() );
+    fn.SetExt( wxT( "kicad_cnd" ) );
+    if( !fn.FileExists() )
+        return;
+
+    nlohmann::json j;
+    try
+    {
+        std::ifstream ifs( fn.GetFullPath().fn_str() );
+        if( !ifs.is_open() )
+            return;
+        ifs >> j;
+    }
+    catch( const std::exception& )
+    {
+        return;
+    }
+
+    std::vector<CONDUIT_ROUTE_INFO> routes;
+
+    if( j.contains( "conduits" ) && j[ "conduits" ].is_array() )
+    {
+        for( const auto& cj : j[ "conduits" ] )
+        {
+            if( !cj.contains( "route_points" ) || !cj[ "route_points" ].is_array() )
+                continue;
+
+            CONDUIT_ROUTE_INFO info;
+            info.layer = cj.value( "route_layer", -1 );
+            info.label = wxString::FromUTF8(
+                    cj.value( "name", std::string() ).c_str() );
+
+            for( const auto& pj : cj[ "route_points" ] )
+            {
+                if( pj.is_array() && pj.size() == 2 )
+                    info.points.emplace_back( pj[ 0 ].get<int>(), pj[ 1 ].get<int>() );
+            }
+
+            if( info.points.size() >= 2 )
+                routes.push_back( std::move( info ) );
+        }
+    }
+
+    UpdateConduitOverlay( routes );
+}
+
+
+void PCB_EDIT_FRAME::UpdateConduitOverlay(
+        const std::vector<CONDUIT_ROUTE_INFO>& aRoutes )
+{
+    PCB_DRAW_PANEL_GAL* canvas = GetCanvas();
+    if( !canvas )
+        return;
+
+    KIGFX::VIEW* view = canvas->GetView();
+    if( !view )
+        return;
+
+    // Create overlay once; reuse afterward.
+    if( !m_conduitOverlay )
+        m_conduitOverlay = view->MakeOverlay();
+
+    m_conduitOverlay->Clear();
+
+    // Draw each conduit as a thick polyline. Color is a neutral conduit color for
+    // now; future iterations can color per cable type.
+    constexpr int CONDUIT_DRAW_WIDTH_IU = 200000;     // ~0.2 mm = 0.2 ft in our convention
+    const KIGFX::COLOR4D conduitColor( 0.9, 0.5, 0.1, 0.85 );    // orange-ish
+
+    m_conduitOverlay->SetIsStroke( true );
+    m_conduitOverlay->SetIsFill( false );
+    m_conduitOverlay->SetStrokeColor( conduitColor );
+    m_conduitOverlay->SetLineWidth( CONDUIT_DRAW_WIDTH_IU );
+
+    for( const CONDUIT_ROUTE_INFO& route : aRoutes )
+    {
+        for( size_t i = 1; i < route.points.size(); ++i )
+        {
+            m_conduitOverlay->Line(
+                    VECTOR2I( route.points[i - 1].x, route.points[i - 1].y ),
+                    VECTOR2I( route.points[i    ].x, route.points[i    ].y ) );
+        }
+    }
+
+    canvas->ForceRefresh();
 }

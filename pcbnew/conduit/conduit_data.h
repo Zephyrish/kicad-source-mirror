@@ -8,7 +8,9 @@
 #ifndef CONDUIT_DATA_H
 #define CONDUIT_DATA_H
 
+#include <map>
 #include <vector>
+#include <wx/gdicmn.h>      // wxPoint
 #include <wx/string.h>
 
 #include <kiid.h>
@@ -26,6 +28,10 @@ enum class CONDUIT_TYPE
 
 
 wxString ConduitTypeToString( CONDUIT_TYPE aType );
+
+/// Reverse lookup. Returns true if aText matched a known type (case-insensitive),
+/// and writes the corresponding CONDUIT_TYPE to aOut. Returns false otherwise.
+bool ConduitTypeFromString( const wxString& aText, CONDUIT_TYPE& aOut );
 
 
 /**
@@ -124,10 +130,59 @@ public:
     double GetMaxFillPercent() const { return m_maxFillPercent; }
     void   SetMaxFillPercent( double aPct ) { m_maxFillPercent = aPct; }
 
+    /// Name of the project Conduit Spec this conduit references (empty if none).
+    /// When set, the spec's clearance/bend rules are authoritative; material and
+    /// diameter values are typically copied from the spec into m_type / m_diameterInches
+    /// when the engineer picks a spec, but they remain individually editable.
+    const wxString& GetSpecName() const { return m_specName; }
+    void SetSpecName( const wxString& aName ) { m_specName = aName; }
+
     /// Canvas position (virtual coords).
     int  GetPosX() const { return m_posX; }
     int  GetPosY() const { return m_posY; }
     void SetPosition( int aX, int aY ) { m_posX = aX; m_posY = aY; }
+
+    // ---- Routing (Phase 4.F.1: manual entry only; routing tool comes in 4.F.2) ----
+
+    /// Site Layout copper layer this conduit runs on (PCB_LAYER_ID). -1 if not set.
+    int  GetRouteLayer() const { return m_routeLayer; }
+    void SetRouteLayer( int aLayer ) { m_routeLayer = aLayer; }
+
+    /// Horizontal run length (feet) along the layer. If route points are set, this
+    /// is derived from them; otherwise it's a manually-entered value. Does NOT
+    /// include the depth dive (surface ↔ layer); that's added per-layer using
+    /// LayerDepthsInches.
+    double GetHorizontalLengthFt() const { return m_horizontalLengthFt; }
+    void   SetHorizontalLengthFt( double aFt ) { m_horizontalLengthFt = aFt; }
+
+    /// Polyline points (board IU) representing the conduit run on its layer.
+    /// Phase 4.F.2.A: editable via the route-points dialog. Phase 4.F.2.B: click tool.
+    const std::vector<wxPoint>& GetRoutePoints() const { return m_routePoints; }
+    void SetRoutePoints( std::vector<wxPoint> aPoints )
+    {
+        m_routePoints = std::move( aPoints );
+        recomputeHorizontalFromRoute();
+    }
+    void AddRoutePoint( const wxPoint& aPoint )
+    {
+        m_routePoints.push_back( aPoint );
+        recomputeHorizontalFromRoute();
+    }
+    void ClearRoutePoints()
+    {
+        m_routePoints.clear();
+        // Don't touch m_horizontalLengthFt — let the engineer keep manual entry.
+    }
+
+    /// Total length = horizontal + 2 × layer depth (so the cable can dive down and
+    /// come back up). aLayerDepthsInches maps PCB_LAYER_ID → depth in inches.
+    /// If the conduit's layer isn't in the map (or depth is 0), no dive is added.
+    double GetTotalLengthFt( const std::map<int, double>& aLayerDepthsInches ) const;
+
+    /// Frame caches the recently-computed total length here so the canvas can show
+    /// it without needing project-side data.
+    double GetCachedTotalLengthFt() const { return m_cachedTotalLengthFt; }
+    void   SetCachedTotalLengthFt( double aFt ) { m_cachedTotalLengthFt = aFt; }
 
     const std::vector<CABLE*>& GetCables() const { return m_cables; }
     void AddCable( CABLE* aCable ) { m_cables.push_back( aCable ); }
@@ -143,12 +198,19 @@ public:
 
 private:
     wxString            m_name;
+    wxString            m_specName;       ///< project Conduit Spec reference, or empty
     CONDUIT_TYPE        m_type;
     double              m_diameterInches;
     double              m_maxFillPercent;
     int                 m_posX;
     int                 m_posY;
-    std::vector<CABLE*> m_cables;   // non-owning: cables live in the project model
+    int                  m_routeLayer = -1;
+    double               m_horizontalLengthFt = 0.0;
+    double               m_cachedTotalLengthFt = 0.0;   // updated by frame each refresh
+    std::vector<wxPoint> m_routePoints;                 // board IU
+    std::vector<CABLE*>  m_cables;   // non-owning: cables live in the project model
+
+    void recomputeHorizontalFromRoute();
 };
 
 #endif // CONDUIT_DATA_H

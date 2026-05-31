@@ -184,6 +184,12 @@ public:
      */
     virtual void OpenCableSpecs() {}
 
+    /**
+     * Site Layout cross-launch: open the Conduit Specs dialog.
+     * Default no-op; PCB_EDIT_FRAME overrides it.
+     */
+    virtual void OpenConduitSpecs() {}
+
 protected:
 
     /// Event handler, routes to derivative specific virtual #KiwayMailIn().

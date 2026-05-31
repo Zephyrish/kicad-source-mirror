@@ -25,10 +25,57 @@ wxString ConduitTypeToString( CONDUIT_TYPE aType )
 }
 
 
+bool ConduitTypeFromString( const wxString& aText, CONDUIT_TYPE& aOut )
+{
+    wxString t = aText.Upper().Trim().Trim( false );
+    if( t == wxT( "EMT" ) )  { aOut = CONDUIT_TYPE::EMT;  return true; }
+    if( t == wxT( "PVC" ) )  { aOut = CONDUIT_TYPE::PVC;  return true; }
+    if( t == wxT( "RGS" ) )  { aOut = CONDUIT_TYPE::RGS;  return true; }
+    if( t == wxT( "IMC" ) )  { aOut = CONDUIT_TYPE::IMC;  return true; }
+    if( t == wxT( "FMC" ) )  { aOut = CONDUIT_TYPE::FMC;  return true; }
+    if( t == wxT( "LFNC" ) ) { aOut = CONDUIT_TYPE::LFNC; return true; }
+    return false;
+}
+
+
 void CONDUIT::RemoveCable( CABLE* aCable )
 {
     m_cables.erase( std::remove( m_cables.begin(), m_cables.end(), aCable ),
                     m_cables.end() );
+}
+
+
+void CONDUIT::recomputeHorizontalFromRoute()
+{
+    if( m_routePoints.size() < 2 )
+        return;     // can't measure with fewer than 2 points
+
+    double totalIu = 0.0;
+    for( size_t i = 1; i < m_routePoints.size(); ++i )
+    {
+        double dx = m_routePoints[i].x - m_routePoints[i - 1].x;
+        double dy = m_routePoints[i].y - m_routePoints[i - 1].y;
+        totalIu += std::sqrt( dx * dx + dy * dy );
+    }
+
+    // KiCad IU = 1 nm; 1 mm = 1e6 IU; project convention treats mm as feet, so
+    // 1 ft = 1,000,000 IU here.
+    m_horizontalLengthFt = totalIu / 1000000.0;
+}
+
+
+double CONDUIT::GetTotalLengthFt( const std::map<int, double>& aLayerDepthsInches ) const
+{
+    double total = m_horizontalLengthFt;
+
+    if( m_routeLayer >= 0 )
+    {
+        auto it = aLayerDepthsInches.find( m_routeLayer );
+        if( it != aLayerDepthsInches.end() && it->second > 0.0 )
+            total += 2.0 * ( it->second / 12.0 );   // surface → depth → surface
+    }
+
+    return total;
 }
 
 

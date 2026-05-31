@@ -61,6 +61,7 @@ public:
     int ShowSchematicSetup( const TOOL_EVENT& aEvent );
     int ShowCableSpecs( const TOOL_EVENT& aEvent );
     int ShowConduitSchematic( const TOOL_EVENT& aEvent );
+    int ShowConduitSpecs( const TOOL_EVENT& aEvent );
     int PageSetup( const TOOL_EVENT& aEvent );
     int Print( const TOOL_EVENT& aEvent );
     int Plot( const TOOL_EVENT& aEvent );

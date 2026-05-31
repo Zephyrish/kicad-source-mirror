@@ -273,6 +273,24 @@ public:
     std::map<wxString, CABLE_SPEC> m_CableSpecsByNet;
 
     /**
+     * Conduit spec (site layout side). Defines the physical conduit properties
+     * — material, dimensions, and routing/DRC rules. Keyed by spec name (e.g.,
+     * "2-inch EMT"). Individual conduits in the conduit schematic reference one
+     * of these by name.
+     */
+    struct CONDUIT_SPEC
+    {
+        wxString supplier;
+        wxString part_number;
+        wxString material;              ///< "EMT", "PVC", "RGS", "IMC", "FMC", "LFNC", etc.
+        double   inner_diameter_in   = 0.0;
+        double   clearance_in        = 0.0;   ///< min spacing from other conduits
+        double   max_bend_angle_deg  = 90.0;  ///< steepest bend allowed
+        double   bend_radius_in      = 0.0;   ///< min bend radius
+    };
+    std::map<wxString, CONDUIT_SPEC> m_ConduitSpecs;
+
+    /**
      * Board design settings for this project's board.  This will be initialized by PcbNew after
      * loading a board so that BOARD_DESIGN_SETTINGS doesn't need to live in common for now.
      * Owned by the BOARD; may be null if a board isn't loaded: be careful

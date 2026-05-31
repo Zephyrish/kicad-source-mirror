@@ -586,11 +586,13 @@ public:
     // Conduit system (experimental)
     static TOOL_ACTION conduitTest;
     static TOOL_ACTION cableSpecsFromPcb;
+    static TOOL_ACTION routeConduit;
 
     // Site Layout (Phase 4)
     static TOOL_ACTION siteOrigin;
     static TOOL_ACTION toggleGlobalFrame;
     static TOOL_ACTION layerDepths;
+    static TOOL_ACTION conduitSpecs;
     static TOOL_ACTION repairFootprint;
     static TOOL_ACTION inspectClearance;
     static TOOL_ACTION inspectConstraints;

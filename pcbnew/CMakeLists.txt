@@ -421,6 +421,10 @@ set( PCBNEW_CLASS_SRCS
     conduit_schematic_frame.cpp
     conduit/conduit_data.cpp
     conduit/conduit_canvas_panel.cpp
+    conduit/circuit_list_exporter.cpp
+    site_layout/dialog_site_origin.cpp
+    site_layout/dialog_layer_depths.cpp
+    site_layout/dialog_conduit_specs.cpp
     pcb_edit_frame.cpp
     pcb_plotter.cpp
     pcbnew_config.cpp

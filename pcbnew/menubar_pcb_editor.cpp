@@ -436,11 +436,13 @@ void PCB_EDIT_FRAME::doReCreateMenuBar()
     // Conduit system (experimental)
     toolsMenu->AppendSeparator();
     toolsMenu->Add( PCB_ACTIONS::conduitTest );
+    toolsMenu->Add( PCB_ACTIONS::routeConduit );
 
     // Site Layout settings
     toolsMenu->AppendSeparator();
     toolsMenu->Add( PCB_ACTIONS::siteOrigin );
     toolsMenu->Add( PCB_ACTIONS::layerDepths );
+    toolsMenu->Add( PCB_ACTIONS::conduitSpecs );
 
     ACTION_MENU* multichannelSubmenu = new ACTION_MENU( false, selTool );
     multichannelSubmenu->SetTitle( _( "Multi-Channel" ) );

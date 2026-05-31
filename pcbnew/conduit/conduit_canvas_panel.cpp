@@ -348,11 +348,28 @@ void CONDUIT_CANVAS_PANEL::drawConduit( wxDC& aDC, const CONDUIT* aConduit,
 
     aDC.SetFont( wxFont( wxFontInfo( 9 ) ) );
 
+    // Length line (top of footer)
+    double totalLen = aConduit->GetCachedTotalLengthFt();
+    if( totalLen > 0.0 )
+    {
+        aDC.SetTextForeground( wxColour( 40, 40, 40 ) );
+        aDC.DrawText( wxString::Format( _( "Length: %.2f ft" ), totalLen ),
+                      aRect.x + INNER_PADDING, footerLineY + 2 );
+    }
+    else
+    {
+        aDC.SetTextForeground( wxColour( 130, 130, 130 ) );
+        aDC.DrawText( _( "Length: —" ),
+                      aRect.x + INNER_PADDING, footerLineY + 2 );
+    }
+
+    int fillLineY = footerLineY + 18;   // second footer line
+
     if( !aConduit->HasAllCableSizesKnown() )
     {
         aDC.SetTextForeground( wxColour( 180, 40, 40 ) );
         aDC.DrawText( _( "Error: cable size not assigned" ),
-                      aRect.x + INNER_PADDING, footerLineY + 4 );
+                      aRect.x + INNER_PADDING, fillLineY );
         return;
     }
 
@@ -371,7 +388,7 @@ void CONDUIT_CANVAS_PANEL::drawConduit( wxDC& aDC, const CONDUIT* aConduit,
     aDC.SetTextForeground( fillColor );
     aDC.DrawText( wxString::Format( _( "Fill: %.1f%% / %.0f%%" ),
                                     fillPct, aConduit->GetMaxFillPercent() ),
-                  aRect.x + INNER_PADDING, footerLineY + 4 );
+                  aRect.x + INNER_PADDING, fillLineY );
 }
 
 

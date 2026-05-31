@@ -5,6 +5,7 @@
  */
 
 #include "conduit_schematic_frame.h"
+#include "conduit/circuit_list_exporter.h"
 
 #include <algorithm>
 #include <fstream>
@@ -20,6 +21,7 @@
 #include <footprint.h>
 #include <netinfo.h>
 #include <pad.h>
+#include <pcb_edit_frame.h>
 
 #include <project.h>
 #include <project/project_file.h>
@@ -54,6 +56,8 @@ enum
     ID_ASSIGN_CABLE,
     ID_CONDUIT_LIST,
     ID_CABLE_LIST,
+    ID_EXPORT_CIRCUIT_LIST,
+    ID_EXPORT_RACEWAY_LIST,
 };
 
 
@@ -64,6 +68,8 @@ BEGIN_EVENT_TABLE( CONDUIT_SCHEMATIC_FRAME, KIWAY_PLAYER )
     EVT_TOOL( ID_ASSIGN_CABLE, CONDUIT_SCHEMATIC_FRAME::onAssignCable )
     EVT_MENU( wxID_SAVE,    CONDUIT_SCHEMATIC_FRAME::onSave )
     EVT_MENU( wxID_SAVEAS,  CONDUIT_SCHEMATIC_FRAME::onSaveAs )
+    EVT_MENU( ID_EXPORT_CIRCUIT_LIST, CONDUIT_SCHEMATIC_FRAME::onExportCircuitList )
+    EVT_MENU( ID_EXPORT_RACEWAY_LIST, CONDUIT_SCHEMATIC_FRAME::onExportRacewayList )
     EVT_LIST_ITEM_ACTIVATED( ID_CONDUIT_LIST, CONDUIT_SCHEMATIC_FRAME::onConduitListActivated )
     EVT_LIST_ITEM_SELECTED ( ID_CONDUIT_LIST, CONDUIT_SCHEMATIC_FRAME::onConduitListSelected )
     EVT_LIST_ITEM_ACTIVATED( ID_CABLE_LIST,   CONDUIT_SCHEMATIC_FRAME::onCableActivated )
@@ -214,6 +220,9 @@ void CONDUIT_SCHEMATIC_FRAME::setupMenuBar()
     fileMenu->Append( wxID_SAVE,   _( "&Save\tCtrl+S" ) );
     fileMenu->Append( wxID_SAVEAS, _( "Save &As...\tCtrl+Shift+S" ) );
     fileMenu->AppendSeparator();
+    fileMenu->Append( ID_EXPORT_CIRCUIT_LIST, _( "Export &Circuit List (CSV)..." ) );
+    fileMenu->Append( ID_EXPORT_RACEWAY_LIST, _( "Export &Raceway List (CSV)..." ) );
+    fileMenu->AppendSeparator();
     fileMenu->Append( wxID_CLOSE,  _( "&Close" ) );
     menuBar->Append( fileMenu, _( "&File" ) );
 
@@ -282,11 +291,12 @@ void CONDUIT_SCHEMATIC_FRAME::setupBody()
     m_conduitListCtrl = new wxListCtrl( conduitsPanel, ID_CONDUIT_LIST,
                                         wxDefaultPosition, wxDefaultSize,
                                         wxLC_REPORT | wxLC_SINGLE_SEL );
-    m_conduitListCtrl->AppendColumn( _( "Name" ),     wxLIST_FORMAT_LEFT,  100 );
-    m_conduitListCtrl->AppendColumn( _( "Type" ),     wxLIST_FORMAT_LEFT,  60 );
-    m_conduitListCtrl->AppendColumn( _( "Dia (in)" ), wxLIST_FORMAT_RIGHT, 70 );
-    m_conduitListCtrl->AppendColumn( _( "Cables" ),   wxLIST_FORMAT_RIGHT, 60 );
-    m_conduitListCtrl->AppendColumn( _( "Fill %" ),   wxLIST_FORMAT_RIGHT, 60 );
+    m_conduitListCtrl->AppendColumn( _( "Name" ),       wxLIST_FORMAT_LEFT,  100 );
+    m_conduitListCtrl->AppendColumn( _( "Type" ),       wxLIST_FORMAT_LEFT,  60 );
+    m_conduitListCtrl->AppendColumn( _( "Dia (in)" ),   wxLIST_FORMAT_RIGHT, 70 );
+    m_conduitListCtrl->AppendColumn( _( "Cables" ),     wxLIST_FORMAT_RIGHT, 60 );
+    m_conduitListCtrl->AppendColumn( _( "Fill %" ),     wxLIST_FORMAT_RIGHT, 60 );
+    m_conduitListCtrl->AppendColumn( _( "Length (ft)" ), wxLIST_FORMAT_RIGHT, 80 );
     conduitsSizer->Add( m_conduitListCtrl, 1, wxEXPAND | wxALL, 2 );
     conduitsPanel->SetSizer( conduitsSizer );
 
@@ -309,6 +319,97 @@ void CONDUIT_SCHEMATIC_FRAME::setupBody()
 void CONDUIT_SCHEMATIC_FRAME::RefreshFromBoard()
 {
     refreshCableList();
+}
+
+
+std::vector<wxString> CONDUIT_SCHEMATIC_FRAME::GetConduitNames() const
+{
+    std::vector<wxString> out;
+    out.reserve( m_conduits.size() );
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+        out.push_back( c->GetName() );
+    return out;
+}
+
+
+// Conversion: 1 inch = 1,000,000 / 12 IU (project convention: 1 mm = 1 ft).
+static constexpr double IU_PER_INCH = 1000000.0 / 12.0;
+
+
+int CONDUIT_SCHEMATIC_FRAME::GetConduitClearanceIu( const wxString& aConduitName ) const
+{
+    const CONDUIT* conduit = nullptr;
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( c->GetName() == aConduitName ) { conduit = c.get(); break; }
+    }
+    if( !conduit || conduit->GetSpecName().IsEmpty() )
+        return 0;
+
+    const PROJECT_FILE& proj = const_cast<CONDUIT_SCHEMATIC_FRAME*>( this )
+                                       ->Prj().GetProjectFile();
+    auto it = proj.m_ConduitSpecs.find( conduit->GetSpecName() );
+    if( it == proj.m_ConduitSpecs.end() )
+        return 0;
+    return static_cast<int>( it->second.clearance_in * IU_PER_INCH );
+}
+
+
+int CONDUIT_SCHEMATIC_FRAME::GetConduitHalfWidthIu( const wxString& aConduitName ) const
+{
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( c->GetName() == aConduitName )
+            return static_cast<int>( c->GetDiameterInches() * IU_PER_INCH * 0.5 );
+    }
+    return 0;
+}
+
+
+std::vector<CONDUIT_SCHEMATIC_FRAME::ROUTE_FOR_COLLISION>
+CONDUIT_SCHEMATIC_FRAME::GetAllRoutesForCollision( const wxString& aExcludeName ) const
+{
+    std::vector<ROUTE_FOR_COLLISION> out;
+
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( c->GetName() == aExcludeName )
+            continue;
+        if( c->GetRoutePoints().size() < 2 )
+            continue;
+
+        ROUTE_FOR_COLLISION r;
+        r.conduitName = c->GetName();
+        r.layer       = c->GetRouteLayer();
+        r.points      = c->GetRoutePoints();
+        r.clearanceIu = GetConduitClearanceIu( c->GetName() );
+        r.halfWidthIu = GetConduitHalfWidthIu( c->GetName() );
+        out.push_back( std::move( r ) );
+    }
+    return out;
+}
+
+
+void CONDUIT_SCHEMATIC_FRAME::SetConduitRoute( const wxString& aConduitName, int aLayer,
+                                               const std::vector<wxPoint>& aPoints )
+{
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( c->GetName() != aConduitName )
+            continue;
+
+        c->SetRouteLayer( aLayer );
+        c->SetRoutePoints( aPoints );    // also recomputes horizontal length
+
+        refreshConduitList();
+        refreshCableList();   // also refreshes canvas + cache + overlay push
+        setDirty( true );
+
+        // Persist immediately so the PCB editor's on-board-load read sees it.
+        if( !m_filePath.IsEmpty() )
+            saveToFile( m_filePath );
+        return;
+    }
 }
 
 
@@ -335,6 +436,18 @@ void CONDUIT_SCHEMATIC_FRAME::refreshConduitList()
         {
             m_conduitListCtrl->SetItem( idx, 4, _( "error" ) );
         }
+
+        double totalLen = c->GetCachedTotalLengthFt();
+        if( totalLen > 0.0 )
+        {
+            m_conduitListCtrl->SetItem( idx, 5,
+                wxString::Format( wxT( "%.2f" ), totalLen ) );
+        }
+        else
+        {
+            m_conduitListCtrl->SetItem( idx, 5, wxT( "—" ) );
+        }
+
         m_conduitListCtrl->SetItemData( idx, static_cast<long>( i ) );
     }
 
@@ -541,6 +654,27 @@ void CONDUIT_SCHEMATIC_FRAME::syncCablesFromBoard()
         }
 
         // 3. No spec — leave m_areaKnown == false
+    }
+
+    // ---- Cache per-conduit total lengths (uses LayerDepths from project) ----
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+        c->SetCachedTotalLengthFt( c->GetTotalLengthFt( proj.m_LayerDepthsInches ) );
+
+    // ---- Push route geometry to the PCB editor's overlay, if reachable ----
+    if( PCB_EDIT_FRAME* pcbFrame = dynamic_cast<PCB_EDIT_FRAME*>( GetParent() ) )
+    {
+        std::vector<PCB_EDIT_FRAME::CONDUIT_ROUTE_INFO> routes;
+        for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+        {
+            if( c->GetRoutePoints().size() < 2 )
+                continue;
+            PCB_EDIT_FRAME::CONDUIT_ROUTE_INFO info;
+            info.layer  = c->GetRouteLayer();
+            info.points = c->GetRoutePoints();
+            info.label  = c->GetName();
+            routes.push_back( std::move( info ) );
+        }
+        pcbFrame->UpdateConduitOverlay( routes );
     }
 }
 
@@ -976,19 +1110,142 @@ void CONDUIT_SCHEMATIC_FRAME::onCableActivated( wxListEvent& aEvent )
 }
 
 
+bool CONDUIT_SCHEMATIC_FRAME::editConduitRoutePoints( CONDUIT* aConduit )
+{
+    // Manual point-list editor. Each row = one polyline vertex (X, Y in board IU).
+    // Phase 4.F.2.B will replace this with click-to-draw in the PCB editor; this
+    // exists as the interim path to validate the data + overlay pipeline.
+
+    wxDialog dlg( this, wxID_ANY, _( "Edit Conduit Route Points" ),
+                  wxDefaultPosition, wxSize( 480, 480 ),
+                  wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER );
+
+    wxBoxSizer* outer = new wxBoxSizer( wxVERTICAL );
+    outer->Add( new wxStaticText( &dlg, wxID_ANY,
+            _( "Polyline points in board internal units (nanometers).\n"
+               "1 ft = 1,000,000 IU (project convention: mm treated as ft).\n"
+               "Need at least 2 points to define a polyline." ) ),
+            0, wxALL, 10 );
+
+    wxListCtrl* list = new wxListCtrl( &dlg, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+                                       wxLC_REPORT | wxLC_SINGLE_SEL );
+    list->AppendColumn( wxT( "#" ),  wxLIST_FORMAT_RIGHT, 40 );
+    list->AppendColumn( wxT( "X (IU)" ), wxLIST_FORMAT_RIGHT, 140 );
+    list->AppendColumn( wxT( "Y (IU)" ), wxLIST_FORMAT_RIGHT, 140 );
+    outer->Add( list, 1, wxEXPAND | wxLEFT | wxRIGHT, 10 );
+
+    auto fillList = [&]( const std::vector<wxPoint>& pts )
+    {
+        list->DeleteAllItems();
+        for( size_t i = 0; i < pts.size(); ++i )
+        {
+            long idx = list->InsertItem( static_cast<long>( i ),
+                                         wxString::Format( wxT( "%zu" ), i + 1 ) );
+            list->SetItem( idx, 1, wxString::Format( wxT( "%d" ), pts[i].x ) );
+            list->SetItem( idx, 2, wxString::Format( wxT( "%d" ), pts[i].y ) );
+        }
+    };
+
+    // Working copy
+    std::vector<wxPoint> pts = aConduit->GetRoutePoints();
+    fillList( pts );
+
+    // Input row + Add button
+    wxBoxSizer* inputRow = new wxBoxSizer( wxHORIZONTAL );
+    wxTextCtrl* xCtrl = new wxTextCtrl( &dlg, wxID_ANY, wxT( "0" ),
+                                        wxDefaultPosition, wxSize( 120, -1 ) );
+    wxTextCtrl* yCtrl = new wxTextCtrl( &dlg, wxID_ANY, wxT( "0" ),
+                                        wxDefaultPosition, wxSize( 120, -1 ) );
+    wxButton* addBtn    = new wxButton( &dlg, wxID_ANY, _( "Add Point" ) );
+    wxButton* removeBtn = new wxButton( &dlg, wxID_ANY, _( "Remove Selected" ) );
+    wxButton* clearBtn  = new wxButton( &dlg, wxID_ANY, _( "Clear All" ) );
+
+    inputRow->Add( new wxStaticText( &dlg, wxID_ANY, _( "X:" ) ),
+                   0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 4 );
+    inputRow->Add( xCtrl, 0, wxRIGHT, 8 );
+    inputRow->Add( new wxStaticText( &dlg, wxID_ANY, _( "Y:" ) ),
+                   0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 4 );
+    inputRow->Add( yCtrl, 0, wxRIGHT, 8 );
+    inputRow->Add( addBtn, 0, wxRIGHT, 4 );
+    inputRow->Add( removeBtn, 0, wxRIGHT, 4 );
+    inputRow->Add( clearBtn, 0 );
+    outer->Add( inputRow, 0, wxEXPAND | wxALL, 10 );
+
+    outer->Add( dlg.CreateButtonSizer( wxOK | wxCANCEL ), 0, wxEXPAND | wxALL, 10 );
+    dlg.SetSizer( outer );
+    dlg.Layout();
+
+    addBtn->Bind( wxEVT_BUTTON,
+            [&]( wxCommandEvent& )
+            {
+                long x = 0, y = 0;
+                xCtrl->GetValue().ToLong( &x );
+                yCtrl->GetValue().ToLong( &y );
+                pts.emplace_back( static_cast<int>( x ), static_cast<int>( y ) );
+                fillList( pts );
+            } );
+
+    removeBtn->Bind( wxEVT_BUTTON,
+            [&]( wxCommandEvent& )
+            {
+                long sel = list->GetNextItem( -1, wxLIST_NEXT_ALL,
+                                              wxLIST_STATE_SELECTED );
+                if( sel >= 0 && sel < static_cast<long>( pts.size() ) )
+                {
+                    pts.erase( pts.begin() + sel );
+                    fillList( pts );
+                }
+            } );
+
+    clearBtn->Bind( wxEVT_BUTTON,
+            [&]( wxCommandEvent& )
+            {
+                pts.clear();
+                fillList( pts );
+            } );
+
+    if( dlg.ShowModal() != wxID_OK )
+        return false;
+
+    aConduit->SetRoutePoints( pts );    // also recomputes horizontal length
+    setDirty( true );
+    return true;
+}
+
+
 void CONDUIT_SCHEMATIC_FRAME::editConduit( CONDUIT* aConduit )
 {
     wxDialog dlg( this, wxID_ANY, _( "Conduit Properties" ),
-                  wxDefaultPosition, wxSize( 340, 260 ) );
+                  wxDefaultPosition, wxSize( 380, 380 ) );
 
     wxBoxSizer* sizer = new wxBoxSizer( wxVERTICAL );
-    wxFlexGridSizer* grid = new wxFlexGridSizer( 4, 2, 8, 8 );
+    // cols-only constructor: rows grow as needed (we add 7 of them now).
+    wxFlexGridSizer* grid = new wxFlexGridSizer( 2, 8, 8 );
     grid->AddGrowableCol( 1, 1 );
 
     grid->Add( new wxStaticText( &dlg, wxID_ANY, _( "Name:" ) ),
                0, wxALIGN_CENTER_VERTICAL );
     wxTextCtrl* nameCtrl = new wxTextCtrl( &dlg, wxID_ANY, aConduit->GetName() );
     grid->Add( nameCtrl, 1, wxEXPAND );
+
+    // ---- Conduit Spec dropdown (picks values from project's Conduit Specs) ----
+    grid->Add( new wxStaticText( &dlg, wxID_ANY, _( "Conduit Spec:" ) ),
+               0, wxALIGN_CENTER_VERTICAL );
+    wxChoice* specCtrl = new wxChoice( &dlg, wxID_ANY );
+    specCtrl->Append( _( "(none)" ) );
+    PROJECT_FILE& proj = Prj().GetProjectFile();
+    for( const auto& [specName, specData] : proj.m_ConduitSpecs )
+        specCtrl->Append( specName );
+
+    int initialSpecIdx = 0;
+    if( !aConduit->GetSpecName().IsEmpty() )
+    {
+        int found = specCtrl->FindString( aConduit->GetSpecName() );
+        if( found != wxNOT_FOUND )
+            initialSpecIdx = found;
+    }
+    specCtrl->SetSelection( initialSpecIdx );
+    grid->Add( specCtrl, 1, wxEXPAND );
 
     grid->Add( new wxStaticText( &dlg, wxID_ANY, _( "Type:" ) ),
                0, wxALIGN_CENTER_VERTICAL );
@@ -1006,19 +1263,107 @@ void CONDUIT_SCHEMATIC_FRAME::editConduit( CONDUIT* aConduit )
             wxString::Format( wxT( "%.3f" ), aConduit->GetDiameterInches() ) );
     grid->Add( diaCtrl, 1, wxEXPAND );
 
+    // When the engineer picks a Conduit Spec, auto-fill Material + Diameter from it.
+    // They can still edit those fields manually after.
+    specCtrl->Bind( wxEVT_CHOICE,
+            [&proj, specCtrl, typeCtrl, diaCtrl]( wxCommandEvent& )
+            {
+                wxString picked = specCtrl->GetStringSelection();
+                if( picked.IsEmpty() || picked == _( "(none)" ) )
+                    return;
+
+                auto it = proj.m_ConduitSpecs.find( picked );
+                if( it == proj.m_ConduitSpecs.end() )
+                    return;
+                const PROJECT_FILE::CONDUIT_SPEC& s = it->second;
+
+                CONDUIT_TYPE t;
+                if( !s.material.IsEmpty() && ConduitTypeFromString( s.material, t ) )
+                    typeCtrl->SetSelection( static_cast<int>( t ) );
+
+                if( s.inner_diameter_in > 0.0 )
+                    diaCtrl->SetValue( wxString::Format( wxT( "%.3f" ),
+                            s.inner_diameter_in ) );
+            } );
+
     grid->Add( new wxStaticText( &dlg, wxID_ANY, _( "Max Fill %:" ) ),
                0, wxALIGN_CENTER_VERTICAL );
     wxTextCtrl* fillCtrl = new wxTextCtrl( &dlg, wxID_ANY,
             wxString::Format( wxT( "%.1f" ), aConduit->GetMaxFillPercent() ) );
     grid->Add( fillCtrl, 1, wxEXPAND );
 
+    // ---- Routing (4.F.1: manual entry, draw tool comes later) ----
+    grid->Add( new wxStaticText( &dlg, wxID_ANY, _( "Route Layer:" ) ),
+               0, wxALIGN_CENTER_VERTICAL );
+
+    wxChoice* layerCtrl = new wxChoice( &dlg, wxID_ANY );
+    layerCtrl->Append( _( "(none)" ), reinterpret_cast<void*>( -1 ) );
+    int initialLayerIdx = 0;
+    if( m_board )
+    {
+        const LSET enabled = m_board->GetEnabledLayers();
+        for( PCB_LAYER_ID layer : enabled.CuStack() )
+        {
+            int idx = layerCtrl->Append( m_board->GetLayerName( layer ),
+                                         reinterpret_cast<void*>(
+                                                 static_cast<intptr_t>( layer ) ) );
+            if( layer == aConduit->GetRouteLayer() )
+                initialLayerIdx = idx;
+        }
+    }
+    layerCtrl->SetSelection( initialLayerIdx );
+    grid->Add( layerCtrl, 1, wxEXPAND );
+
+    grid->Add( new wxStaticText( &dlg, wxID_ANY, _( "Horizontal Length (ft):" ) ),
+               0, wxALIGN_CENTER_VERTICAL );
+    wxTextCtrl* lenCtrl = new wxTextCtrl( &dlg, wxID_ANY,
+            wxString::Format( wxT( "%.2f" ), aConduit->GetHorizontalLengthFt() ) );
+    grid->Add( lenCtrl, 1, wxEXPAND );
+
+    // Route points summary
+    grid->Add( new wxStaticText( &dlg, wxID_ANY, _( "Route Points:" ) ),
+               0, wxALIGN_CENTER_VERTICAL );
+    wxBoxSizer* routeRow = new wxBoxSizer( wxHORIZONTAL );
+    wxStaticText* pointCountLbl = new wxStaticText( &dlg, wxID_ANY,
+            wxString::Format( _( "%zu point(s)" ), aConduit->GetRoutePoints().size() ) );
+    routeRow->Add( pointCountLbl, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8 );
+    wxButton* editRouteBtn = new wxButton( &dlg, wxID_ANY, _( "Edit..." ) );
+    routeRow->Add( editRouteBtn, 0 );
+    grid->Add( routeRow, 1, wxEXPAND );
+
     sizer->Add( grid, 1, wxALL | wxEXPAND, 12 );
+
+    // Hint about the depth dive math
+    sizer->Add( new wxStaticText( &dlg, wxID_ANY,
+            _( "Total = Horizontal Length + 2 × Layer Depth (depth dive at each end).\n"
+               "If Route Points are set, Horizontal Length is computed from the polyline." ) ),
+            0, wxLEFT | wxRIGHT | wxBOTTOM, 12 );
+
     sizer->Add( dlg.CreateButtonSizer( wxOK | wxCANCEL ), 0, wxEXPAND | wxALL, 8 );
     dlg.SetSizer( sizer );
+
+    // Capture-by-reference lambda to open the route-points editor and update controls.
+    editRouteBtn->Bind( wxEVT_BUTTON,
+            [this, aConduit, lenCtrl, pointCountLbl]( wxCommandEvent& )
+            {
+                if( editConduitRoutePoints( aConduit ) )
+                {
+                    lenCtrl->SetValue( wxString::Format( wxT( "%.2f" ),
+                            aConduit->GetHorizontalLengthFt() ) );
+                    pointCountLbl->SetLabel( wxString::Format( _( "%zu point(s)" ),
+                            aConduit->GetRoutePoints().size() ) );
+                }
+            } );
 
     if( dlg.ShowModal() == wxID_OK )
     {
         aConduit->SetName( nameCtrl->GetValue() );
+
+        wxString chosenSpec = specCtrl->GetStringSelection();
+        if( chosenSpec == _( "(none)" ) )
+            chosenSpec.Clear();
+        aConduit->SetSpecName( chosenSpec );
+
         aConduit->SetType( static_cast<CONDUIT_TYPE>( typeCtrl->GetSelection() ) );
 
         double dia = aConduit->GetDiameterInches();
@@ -1028,6 +1373,15 @@ void CONDUIT_SCHEMATIC_FRAME::editConduit( CONDUIT* aConduit )
         double fill = aConduit->GetMaxFillPercent();
         fillCtrl->GetValue().ToDouble( &fill );
         aConduit->SetMaxFillPercent( fill );
+
+        // Route layer (encoded in wxChoice client data)
+        int layerSel = layerCtrl->GetSelection();
+        intptr_t encoded = reinterpret_cast<intptr_t>( layerCtrl->GetClientData( layerSel ) );
+        aConduit->SetRouteLayer( static_cast<int>( encoded ) );
+
+        double len = aConduit->GetHorizontalLengthFt();
+        lenCtrl->GetValue().ToDouble( &len );
+        aConduit->SetHorizontalLengthFt( len );
 
         refreshConduitList();
         refreshCableList();
@@ -1159,11 +1513,19 @@ bool CONDUIT_SCHEMATIC_FRAME::saveToFile( const wxString& aPath )
     {
         nlohmann::json cj;
         cj[ "name" ]              = std::string( c->GetName().utf8_str() );
+        cj[ "spec_name" ]         = std::string( c->GetSpecName().utf8_str() );
         cj[ "type" ]              = static_cast<int>( c->GetType() );
         cj[ "diameter_inches" ]   = c->GetDiameterInches();
         cj[ "max_fill_percent" ]  = c->GetMaxFillPercent();
         cj[ "pos_x" ]             = c->GetPosX();
         cj[ "pos_y" ]             = c->GetPosY();
+        cj[ "route_layer" ]       = c->GetRouteLayer();
+        cj[ "horizontal_length_ft" ] = c->GetHorizontalLengthFt();
+
+        nlohmann::json points = nlohmann::json::array();
+        for( const wxPoint& p : c->GetRoutePoints() )
+            points.push_back( { p.x, p.y } );
+        cj[ "route_points" ] = points;
         cj[ "cables" ]            = nlohmann::json::array();
 
         for( const CABLE* cable : c->GetCables() )
@@ -1245,8 +1607,24 @@ bool CONDUIT_SCHEMATIC_FRAME::loadFromFile( const wxString& aPath )
             conduit->SetType( static_cast<CONDUIT_TYPE>( cj.value( "type", 0 ) ) );
             conduit->SetDiameterInches( cj.value( "diameter_inches", 2.0 ) );
             conduit->SetMaxFillPercent( cj.value( "max_fill_percent", 40.0 ) );
+            conduit->SetSpecName( wxString::FromUTF8(
+                    cj.value( "spec_name", std::string() ).c_str() ) );
             conduit->SetPosition( cj.value( "pos_x", 50 ),
                                   cj.value( "pos_y", 50 ) );
+            conduit->SetRouteLayer( cj.value( "route_layer", -1 ) );
+            conduit->SetHorizontalLengthFt( cj.value( "horizontal_length_ft", 0.0 ) );
+
+            if( cj.contains( "route_points" ) && cj[ "route_points" ].is_array() )
+            {
+                std::vector<wxPoint> pts;
+                for( const auto& pj : cj[ "route_points" ] )
+                {
+                    if( pj.is_array() && pj.size() == 2 )
+                        pts.emplace_back( pj[ 0 ].get<int>(), pj[ 1 ].get<int>() );
+                }
+                if( !pts.empty() )
+                    conduit->SetRoutePoints( std::move( pts ) );
+            }
 
             if( cj.contains( "cables" ) && cj[ "cables" ].is_array() )
             {
@@ -1362,6 +1740,82 @@ void CONDUIT_SCHEMATIC_FRAME::onSaveAs( wxCommandEvent& aEvent )
         return;
 
     saveToFile( dlg.GetPath() );
+}
+
+
+void CONDUIT_SCHEMATIC_FRAME::onExportRacewayList( wxCommandEvent& aEvent )
+{
+    wxString defaultDir;
+    wxString defaultName = wxT( "raceways.csv" );
+
+    if( !m_filePath.IsEmpty() )
+    {
+        wxFileName cnd( m_filePath );
+        defaultDir = cnd.GetPath();
+        defaultName = cnd.GetName() + wxT( "-raceways.csv" );
+    }
+    else if( m_board && !m_board->GetFileName().IsEmpty() )
+    {
+        wxFileName board( m_board->GetFileName() );
+        defaultDir = board.GetPath();
+        defaultName = board.GetName() + wxT( "-raceways.csv" );
+    }
+
+    wxFileDialog dlg( this, _( "Export Raceway List" ),
+                      defaultDir, defaultName,
+                      wxT( "CSV files (*.csv)|*.csv" ),
+                      wxFD_SAVE | wxFD_OVERWRITE_PROMPT );
+
+    if( dlg.ShowModal() != wxID_OK )
+        return;
+
+    bool ok = RACEWAY_LIST_EXPORTER::ExportCsv( dlg.GetPath(), m_conduits );
+
+    if( ok )
+        SetStatusText( wxString::Format( _( "Raceway List exported to %s" ),
+                                         dlg.GetPath() ) );
+    else
+        wxMessageBox( wxString::Format( _( "Failed to write %s" ), dlg.GetPath() ),
+                      _( "Export Failed" ), wxICON_ERROR, this );
+}
+
+
+void CONDUIT_SCHEMATIC_FRAME::onExportCircuitList( wxCommandEvent& aEvent )
+{
+    // Default filename: <project>-circuits.csv next to the .kicad_cnd
+    wxString defaultDir;
+    wxString defaultName = wxT( "circuits.csv" );
+
+    if( !m_filePath.IsEmpty() )
+    {
+        wxFileName cnd( m_filePath );
+        defaultDir = cnd.GetPath();
+        defaultName = cnd.GetName() + wxT( "-circuits.csv" );
+    }
+    else if( m_board && !m_board->GetFileName().IsEmpty() )
+    {
+        wxFileName board( m_board->GetFileName() );
+        defaultDir = board.GetPath();
+        defaultName = board.GetName() + wxT( "-circuits.csv" );
+    }
+
+    wxFileDialog dlg( this, _( "Export Circuit List" ),
+                      defaultDir, defaultName,
+                      wxT( "CSV files (*.csv)|*.csv" ),
+                      wxFD_SAVE | wxFD_OVERWRITE_PROMPT );
+
+    if( dlg.ShowModal() != wxID_OK )
+        return;
+
+    PROJECT_FILE& proj = Prj().GetProjectFile();
+    bool ok = CIRCUIT_LIST_EXPORTER::ExportCsv( dlg.GetPath(), m_conduits, proj, m_board );
+
+    if( ok )
+        SetStatusText( wxString::Format( _( "Circuit List exported to %s" ),
+                                         dlg.GetPath() ) );
+    else
+        wxMessageBox( wxString::Format( _( "Failed to write %s" ), dlg.GetPath() ),
+                      _( "Export Failed" ), wxICON_ERROR, this );
 }
 
 

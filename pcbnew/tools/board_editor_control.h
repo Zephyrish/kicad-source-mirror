@@ -92,11 +92,13 @@ public:
     // Conduit system (experimental)
     int ConduitTest( const TOOL_EVENT& aEvent );
     int CableSpecsFromPcb( const TOOL_EVENT& aEvent );
+    int RouteConduit( const TOOL_EVENT& aEvent );
 
     // Site Layout
     int SiteOrigin( const TOOL_EVENT& aEvent );
     int ToggleGlobalFrame( const TOOL_EVENT& aEvent );
     int LayerDepths( const TOOL_EVENT& aEvent );
+    int ConduitSpecs( const TOOL_EVENT& aEvent );
 
     int UpdatePCBFromSchematic( const TOOL_EVENT& aEvent );
     int UpdateSchematicFromPCB( const TOOL_EVENT& aEvent );

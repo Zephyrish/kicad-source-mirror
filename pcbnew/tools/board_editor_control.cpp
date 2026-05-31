@@ -27,6 +27,10 @@
 #include <conduit_schematic_frame.h>
 #include <site_layout/dialog_site_origin.h>
 #include <site_layout/dialog_layer_depths.h>
+#include <site_layout/dialog_conduit_specs.h>
+#include <view/view_overlay.h>
+#include <wx/choicdlg.h>
+#include <geometry/seg.h>
 
 #include <algorithm>
 #include <climits>
@@ -2306,14 +2310,245 @@ int BOARD_EDITOR_CONTROL::LayerDepths( const TOOL_EVENT& aEvent )
 }
 
 
+int BOARD_EDITOR_CONTROL::ConduitSpecs( const TOOL_EVENT& aEvent )
+{
+    PCB_EDIT_FRAME* editFrame = getEditFrame<PCB_EDIT_FRAME>();
+
+    DIALOG_CONDUIT_SPECS dlg( editFrame );
+    dlg.ShowModal();
+    return 0;
+}
+
+
+int BOARD_EDITOR_CONTROL::RouteConduit( const TOOL_EVENT& aEvent )
+{
+    PCB_EDIT_FRAME* frame = getEditFrame<PCB_EDIT_FRAME>();
+
+    // The tool needs the Conduit Schematic window because the route data lives
+    // in-memory there (and gets saved/displayed via its existing pipeline). If
+    // it isn't open, prompt the user and bail.
+    CONDUIT_SCHEMATIC_FRAME* conduitFrame = dynamic_cast<CONDUIT_SCHEMATIC_FRAME*>(
+            wxWindow::FindWindowByName( CONDUIT_SCHEMATIC_FRAME_NAME ) );
+
+    if( !conduitFrame )
+    {
+        wxMessageBox(
+                _( "Open the Conduit Schematic first (toolbar button), then route conduits." ),
+                _( "Route Conduit" ), wxICON_INFORMATION, frame );
+        return 0;
+    }
+
+    std::vector<wxString> names = conduitFrame->GetConduitNames();
+    if( names.empty() )
+    {
+        wxMessageBox(
+                _( "No conduits defined. Add a conduit in the Conduit Schematic first." ),
+                _( "Route Conduit" ), wxICON_INFORMATION, frame );
+        return 0;
+    }
+
+    wxArrayString choices;
+    for( const wxString& n : names )
+        choices.Add( n );
+
+    wxSingleChoiceDialog picker( frame, _( "Choose a conduit to route:" ),
+                                 _( "Route Conduit" ), choices );
+    if( picker.ShowModal() != wxID_OK )
+        return 0;
+
+    wxString chosenName = picker.GetStringSelection();
+    int      chosenLayer = static_cast<int>( frame->GetActiveLayer() );
+
+    // ---- Collect existing routes for clearance checking ----
+    auto existingRoutes = conduitFrame->GetAllRoutesForCollision( chosenName );
+    int  myClearanceIu  = conduitFrame->GetConduitClearanceIu( chosenName );
+    int  myHalfWidthIu  = conduitFrame->GetConduitHalfWidthIu( chosenName );
+
+    // Returns true if the proposed segment (a→b) on aLayer would collide with any
+    // existing route on the same layer, given combined clearance + half-widths.
+    auto wouldCollide =
+            [&]( const VECTOR2I& a, const VECTOR2I& b ) -> bool
+            {
+                SEG mine( a, b );
+                for( const auto& route : existingRoutes )
+                {
+                    if( route.layer != chosenLayer )
+                        continue;     // different depth — no conflict
+
+                    int requiredSpacing = myHalfWidthIu + route.halfWidthIu
+                                        + std::max( myClearanceIu, route.clearanceIu );
+
+                    for( size_t i = 1; i < route.points.size(); ++i )
+                    {
+                        SEG other( VECTOR2I( route.points[i - 1].x,
+                                             route.points[i - 1].y ),
+                                   VECTOR2I( route.points[i].x,
+                                             route.points[i].y ) );
+                        if( mine.Collide( other, requiredSpacing ) )
+                            return true;
+                    }
+                }
+                return false;
+            };
+
+    // ---- Set up transient preview overlay for the polyline being drawn ----
+    KIGFX::VIEW* view = frame->GetCanvas()->GetView();
+    std::shared_ptr<KIGFX::VIEW_OVERLAY> preview = view->MakeOverlay();
+    preview->SetIsStroke( true );
+    preview->SetIsFill( false );
+    preview->SetStrokeColor( KIGFX::COLOR4D( 0.9, 0.5, 0.1, 1.0 ) );
+    preview->SetLineWidth( 200000 );
+
+    std::vector<wxPoint> points;
+
+    auto redrawPreview = [&]( const VECTOR2I& aCursor, bool aIncludeRubberBand )
+    {
+        preview->Clear();
+        preview->SetIsStroke( true );
+        preview->SetIsFill( false );
+        preview->SetLineWidth( 200000 );
+
+        // Already-committed segments — orange, never check (they were committed knowingly)
+        preview->SetStrokeColor( KIGFX::COLOR4D( 0.9, 0.5, 0.1, 1.0 ) );
+        for( size_t i = 1; i < points.size(); ++i )
+        {
+            preview->Line( VECTOR2I( points[i - 1].x, points[i - 1].y ),
+                           VECTOR2I( points[i].x,     points[i].y ) );
+        }
+
+        // Rubber-band segment — red if it would collide, orange otherwise.
+        if( aIncludeRubberBand && !points.empty() )
+        {
+            VECTOR2I lastPt( points.back().x, points.back().y );
+            bool     collide = wouldCollide( lastPt, aCursor );
+            preview->SetStrokeColor( collide ? KIGFX::COLOR4D( 0.9, 0.1, 0.1, 1.0 )
+                                             : KIGFX::COLOR4D( 0.9, 0.5, 0.1, 1.0 ) );
+            preview->Line( lastPt, aCursor );
+        }
+        view->Update( preview.get() );
+    };
+
+    frame->PushTool( aEvent );
+    Activate();
+    getViewControls()->ShowCursor( true );
+    frame->GetCanvas()->SetCurrentCursor( KICURSOR::PENCIL );
+
+    frame->SetStatusText( _( "Click to add a point  ·  Backspace to undo  ·  "
+                             "Esc / Right-click to finish" ), 0 );
+
+    bool finished = false;
+    bool cancelled = false;
+
+    while( TOOL_EVENT* evt = Wait() )
+    {
+        VECTOR2I cursorPos = getViewControls()->GetCursorPosition();
+
+        if( evt->IsCancelInteractive() )
+        {
+            cancelled = true;
+            break;
+        }
+        else if( evt->IsActivate() )
+        {
+            // Some other tool was activated; treat as cancel
+            cancelled = true;
+            break;
+        }
+        else if( evt->IsClick( BUT_LEFT ) )
+        {
+            // Visual warning only — don't block. Engineer can override if needed.
+            if( !points.empty() )
+            {
+                VECTOR2I lastPt( points.back().x, points.back().y );
+                if( wouldCollide( lastPt, cursorPos ) )
+                {
+                    frame->SetStatusText(
+                            _( "WARNING: segment violates conduit clearance on this layer" ),
+                            0 );
+                }
+                else
+                {
+                    frame->SetStatusText(
+                            _( "Click to add a point  ·  Backspace to undo  ·  "
+                               "Esc / Right-click to finish" ), 0 );
+                }
+            }
+
+            points.emplace_back( cursorPos.x, cursorPos.y );
+            redrawPreview( cursorPos, true );
+        }
+        else if( evt->IsClick( BUT_RIGHT ) || evt->IsDblClick( BUT_LEFT ) )
+        {
+            finished = true;
+            break;
+        }
+        else if( evt->IsMotion() )
+        {
+            redrawPreview( cursorPos, true );
+        }
+        else if( evt->IsKeyPressed() && evt->KeyCode() == WXK_BACK )
+        {
+            if( !points.empty() )
+            {
+                points.pop_back();
+                redrawPreview( cursorPos, true );
+            }
+        }
+        else
+        {
+            evt->SetPassEvent();
+        }
+    }
+
+    // Cleanup the preview overlay regardless of outcome
+    view->Remove( preview.get() );
+    preview.reset();
+
+    getViewControls()->ShowCursor( false );
+    frame->GetCanvas()->SetCurrentCursor( KICURSOR::ARROW );
+    frame->SetStatusText( wxEmptyString, 0 );
+    frame->PopTool( aEvent );
+
+    if( !cancelled && finished && points.size() >= 2 )
+    {
+        conduitFrame->SetConduitRoute( chosenName, chosenLayer, points );
+        frame->SetStatusText( wxString::Format(
+                _( "Routed '%s' with %zu points on layer '%s'" ),
+                chosenName, points.size(),
+                frame->GetBoard()->GetLayerName(
+                        static_cast<PCB_LAYER_ID>( chosenLayer ) ) ) );
+    }
+
+    return 0;
+}
+
+
 int BOARD_EDITOR_CONTROL::CableSpecsFromPcb( const TOOL_EVENT& aEvent )
 {
     PCB_EDIT_FRAME* editFrame = getEditFrame<PCB_EDIT_FRAME>();
 
-    // Find/open the schematic editor and forward the request.
-    KIWAY_PLAYER* schFrame = editFrame->Kiway().Player( FRAME_SCH, true );
+    // First, check if the schematic editor is already open.
+    KIWAY_PLAYER* schFrame = editFrame->Kiway().Player( FRAME_SCH, false );
+
     if( !schFrame )
-        return 0;
+    {
+        // Not open — create it, then load the project's schematic file (otherwise it
+        // launches blank). The schematic file is the board's basename + .kicad_sch.
+        schFrame = editFrame->Kiway().Player( FRAME_SCH, true );
+        if( !schFrame )
+            return 0;
+
+        if( editFrame->GetBoard() && !editFrame->GetBoard()->GetFileName().IsEmpty() )
+        {
+            wxFileName schFile( editFrame->GetBoard()->GetFileName() );
+            schFile.SetExt( FILEEXT::KiCadSchematicFileExtension );
+            if( schFile.FileExists() )
+            {
+                schFrame->OpenProjectFiles(
+                        std::vector<wxString>{ schFile.GetFullPath() } );
+            }
+        }
+    }
 
     schFrame->Show( true );
     schFrame->Raise();
@@ -2446,9 +2681,11 @@ void BOARD_EDITOR_CONTROL::setTransitions()
     Go( &BOARD_EDITOR_CONTROL::RepairBoard,            PCB_ACTIONS::repairBoard.MakeEvent() );
     Go( &BOARD_EDITOR_CONTROL::ConduitTest,            PCB_ACTIONS::conduitTest.MakeEvent() );
     Go( &BOARD_EDITOR_CONTROL::CableSpecsFromPcb,      PCB_ACTIONS::cableSpecsFromPcb.MakeEvent() );
+    Go( &BOARD_EDITOR_CONTROL::RouteConduit,           PCB_ACTIONS::routeConduit.MakeEvent() );
     Go( &BOARD_EDITOR_CONTROL::SiteOrigin,             PCB_ACTIONS::siteOrigin.MakeEvent() );
     Go( &BOARD_EDITOR_CONTROL::ToggleGlobalFrame,      PCB_ACTIONS::toggleGlobalFrame.MakeEvent() );
     Go( &BOARD_EDITOR_CONTROL::LayerDepths,            PCB_ACTIONS::layerDepths.MakeEvent() );
+    Go( &BOARD_EDITOR_CONTROL::ConduitSpecs,           PCB_ACTIONS::conduitSpecs.MakeEvent() );
     // Line modes: explicit, next, and notification
     Go( &BOARD_EDITOR_CONTROL::ChangeLineMode,        PCB_ACTIONS::lineModeFree.MakeEvent() );
     Go( &BOARD_EDITOR_CONTROL::ChangeLineMode,        PCB_ACTIONS::lineMode90.MakeEvent() );

@@ -42,6 +42,36 @@ public:
     /// Re-read cables from the source BOARD's net list.
     void RefreshFromBoard();
 
+    /// Used by the PCB-side routing tool: list conduit names that the user can pick.
+    std::vector<wxString> GetConduitNames() const;
+
+    /// Collision data for the routing tool. One entry per conduit that already has
+    /// a route. Clearance and half-width are pre-computed in board IU.
+    struct ROUTE_FOR_COLLISION
+    {
+        wxString             conduitName;
+        int                  layer;
+        std::vector<wxPoint> points;
+        int                  clearanceIu;   // required spacing from this route
+        int                  halfWidthIu;   // half of this conduit's diameter
+    };
+    /// Returns existing routes, optionally excluding one (the conduit being re-routed).
+    std::vector<ROUTE_FOR_COLLISION> GetAllRoutesForCollision(
+            const wxString& aExcludeName = wxEmptyString ) const;
+
+    /// Effective clearance for a conduit (looks up its spec, falls back to 0).
+    /// Returned in board IU.
+    int GetConduitClearanceIu( const wxString& aConduitName ) const;
+
+    /// Effective half-width for a conduit (half of its inner diameter). Returns IU.
+    int GetConduitHalfWidthIu( const wxString& aConduitName ) const;
+
+    /// Used by the PCB-side routing tool: write a freshly-drawn polyline to the
+    /// named conduit. Updates layer + points, recomputes lengths, refreshes UI,
+    /// marks dirty, and persists to .kicad_cnd. No-op if name not found.
+    void SetConduitRoute( const wxString& aConduitName, int aLayer,
+                          const std::vector<wxPoint>& aPoints );
+
 private:
     void setupMenuBar();
     void setupToolBar();
@@ -50,6 +80,8 @@ private:
     void refreshConduitList();
     void refreshCableList();
     void editConduit( CONDUIT* aConduit );
+    /// Returns true if the user committed changes (so caller can refresh).
+    bool editConduitRoutePoints( CONDUIT* aConduit );
     void deleteConduit( CONDUIT* aConduit );
 
     /// Find a CABLE for (netCode, fromRef) in m_cables, or create one.
@@ -105,6 +137,8 @@ private:
     void onAssignCable( wxCommandEvent& aEvent );
     void onSave( wxCommandEvent& aEvent );
     void onSaveAs( wxCommandEvent& aEvent );
+    void onExportCircuitList( wxCommandEvent& aEvent );
+    void onExportRacewayList( wxCommandEvent& aEvent );
     void onConduitListActivated( wxListEvent& aEvent );
     void onConduitListSelected( wxListEvent& aEvent );
     void onCableActivated( wxListEvent& aEvent );

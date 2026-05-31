@@ -514,13 +514,61 @@ int SCH_EDITOR_CONTROL::ShowCableSpecs( const TOOL_EVENT& aEvent )
 int SCH_EDITOR_CONTROL::ShowConduitSchematic( const TOOL_EVENT& aEvent )
 {
     // Bring up (or open) the PCB editor, then ask it to open the Conduit window.
-    KIWAY_PLAYER* pcbFrame = m_frame->Kiway().Player( FRAME_PCB_EDITOR, true );
+    KIWAY_PLAYER* pcbFrame = m_frame->Kiway().Player( FRAME_PCB_EDITOR, false );
+
     if( !pcbFrame )
-        return 0;
+    {
+        pcbFrame = m_frame->Kiway().Player( FRAME_PCB_EDITOR, true );
+        if( !pcbFrame )
+            return 0;
+
+        // Load the project's board file so the conduit window has nets to work with.
+        if( !m_frame->Schematic().GetFileName().IsEmpty() )
+        {
+            wxFileName boardFile( m_frame->Prj().AbsolutePath(
+                    m_frame->Schematic().GetFileName() ) );
+            boardFile.SetExt( FILEEXT::KiCadPcbFileExtension );
+            if( boardFile.FileExists() )
+            {
+                pcbFrame->OpenProjectFiles(
+                        std::vector<wxString>{ boardFile.GetFullPath() } );
+            }
+        }
+    }
 
     pcbFrame->Show( true );
     pcbFrame->Raise();
     pcbFrame->OpenConduitSchematic();
+    return 0;
+}
+
+
+int SCH_EDITOR_CONTROL::ShowConduitSpecs( const TOOL_EVENT& aEvent )
+{
+    KIWAY_PLAYER* pcbFrame = m_frame->Kiway().Player( FRAME_PCB_EDITOR, false );
+
+    if( !pcbFrame )
+    {
+        pcbFrame = m_frame->Kiway().Player( FRAME_PCB_EDITOR, true );
+        if( !pcbFrame )
+            return 0;
+
+        if( !m_frame->Schematic().GetFileName().IsEmpty() )
+        {
+            wxFileName boardFile( m_frame->Prj().AbsolutePath(
+                    m_frame->Schematic().GetFileName() ) );
+            boardFile.SetExt( FILEEXT::KiCadPcbFileExtension );
+            if( boardFile.FileExists() )
+            {
+                pcbFrame->OpenProjectFiles(
+                        std::vector<wxString>{ boardFile.GetFullPath() } );
+            }
+        }
+    }
+
+    pcbFrame->Show( true );
+    pcbFrame->Raise();
+    pcbFrame->OpenConduitSpecs();
     return 0;
 }
 
@@ -3948,6 +3996,7 @@ void SCH_EDITOR_CONTROL::setTransitions()
     Go( &SCH_EDITOR_CONTROL::ShowSchematicSetup,      SCH_ACTIONS::schematicSetup.MakeEvent() );
     Go( &SCH_EDITOR_CONTROL::ShowCableSpecs,          SCH_ACTIONS::cableSpecs.MakeEvent() );
     Go( &SCH_EDITOR_CONTROL::ShowConduitSchematic,    SCH_ACTIONS::showConduitSchematic.MakeEvent() );
+    Go( &SCH_EDITOR_CONTROL::ShowConduitSpecs,        SCH_ACTIONS::showConduitSpecs.MakeEvent() );
     Go( &SCH_EDITOR_CONTROL::PageSetup,               ACTIONS::pageSettings.MakeEvent() );
     Go( &SCH_EDITOR_CONTROL::Print,                   ACTIONS::print.MakeEvent() );
     Go( &SCH_EDITOR_CONTROL::Plot,                    ACTIONS::plot.MakeEvent() );

@@ -214,7 +214,8 @@ std::optional<TOOLBAR_CONFIGURATION> SCH_EDIT_TOOLBAR_SETTINGS::DefaultToolbarCo
         config.AppendSeparator()
               .AppendAction( SCH_ACTIONS::showPcbNew )
               .AppendAction( SCH_ACTIONS::showConduitSchematic )
-              .AppendAction( SCH_ACTIONS::cableSpecs );
+              .AppendAction( SCH_ACTIONS::cableSpecs )
+              .AppendAction( SCH_ACTIONS::showConduitSpecs );
 
         config.AppendControl( SCH_ACTION_TOOLBAR_CONTROLS::currentVariant );
 

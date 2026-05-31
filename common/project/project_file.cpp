@@ -202,6 +202,55 @@ PROJECT_FILE::PROJECT_FILE( const wxString& aFullPath ) :
             },
             nlohmann::json::object() ) );
 
+    // Conduit specs (site layout side).
+    m_params.emplace_back( new PARAM_LAMBDA<nlohmann::json>(
+            "pcbnew.conduit_specs",
+            [&]() -> nlohmann::json
+            {
+                nlohmann::json j = nlohmann::json::object();
+                for( const auto& [name, s] : m_ConduitSpecs )
+                {
+                    nlohmann::json entry = {
+                        { "supplier",            std::string( s.supplier.utf8_str() ) },
+                        { "part_number",         std::string( s.part_number.utf8_str() ) },
+                        { "material",            std::string( s.material.utf8_str() ) },
+                        { "inner_diameter_in",   s.inner_diameter_in },
+                        { "clearance_in",        s.clearance_in },
+                        { "max_bend_angle_deg",  s.max_bend_angle_deg },
+                        { "bend_radius_in",      s.bend_radius_in }
+                    };
+                    j[ std::string( name.utf8_str() ) ] = entry;
+                }
+                return j;
+            },
+            [&]( const nlohmann::json& aJson )
+            {
+                m_ConduitSpecs.clear();
+                if( !aJson.is_object() )
+                    return;
+                for( auto it = aJson.begin(); it != aJson.end(); ++it )
+                {
+                    try
+                    {
+                        CONDUIT_SPEC s;
+                        const nlohmann::json& v = it.value();
+                        s.supplier = wxString::FromUTF8(
+                                v.value( "supplier", std::string() ).c_str() );
+                        s.part_number = wxString::FromUTF8(
+                                v.value( "part_number", std::string() ).c_str() );
+                        s.material = wxString::FromUTF8(
+                                v.value( "material", std::string() ).c_str() );
+                        s.inner_diameter_in   = v.value( "inner_diameter_in",   0.0 );
+                        s.clearance_in        = v.value( "clearance_in",        0.0 );
+                        s.max_bend_angle_deg  = v.value( "max_bend_angle_deg",  90.0 );
+                        s.bend_radius_in      = v.value( "bend_radius_in",      0.0 );
+                        m_ConduitSpecs[ wxString::FromUTF8( it.key().c_str() ) ] = s;
+                    }
+                    catch( ... ) {}
+                }
+            },
+            nlohmann::json::object() ) );
+
     // Layer depths — per-copper-layer depth in inches (string key = integer layer ID).
     m_params.emplace_back( new PARAM_LAMBDA<nlohmann::json>(
             "pcbnew.layer_depths",

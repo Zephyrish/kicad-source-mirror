@@ -26,6 +26,12 @@
 #include <mail_type.h>
 #include <settings/app_settings.h>
 #include <variant>
+#include <memory>
+#include <vector>
+
+#include <wx/gdicmn.h>      // wxPoint
+
+namespace KIGFX { class VIEW_OVERLAY; }
 
 class PCB_SCREEN;
 class BOARD;
@@ -127,6 +133,23 @@ public:
 
     /// Site Layout: open the Conduit Schematic. Called via KIWAY_PLAYER hook.
     void OpenConduitSchematic() override;
+
+    /// Site Layout: open the Conduit Specs dialog. Called via KIWAY_PLAYER hook.
+    void OpenConduitSpecs() override;
+
+    /// Site Layout: push a snapshot of conduit routes to the canvas overlay.
+    /// Each route is (layer-id, polyline points in board IU).
+    struct CONDUIT_ROUTE_INFO
+    {
+        int                  layer;     // PCB_LAYER_ID
+        std::vector<wxPoint> points;
+        wxString             label;     // conduit name, for tooltip/legend (future)
+    };
+    void UpdateConduitOverlay( const std::vector<CONDUIT_ROUTE_INFO>& aRoutes );
+
+    /// Read the project's .kicad_cnd sidecar (if present) and populate the conduit
+    /// overlay from its route data. Safe to call when the file is absent.
+    void LoadConduitOverlayFromSidecar();
 
     void KiwayMailIn( KIWAY_MAIL_EVENT& aEvent ) override;
 
@@ -843,6 +866,9 @@ public:
 private:
     friend struct PCB::IFACE;
     friend class APPEARANCE_CONTROLS;
+
+    /// Site Layout conduit route overlay (Phase 4.F.2.A). Created lazily.
+    std::shared_ptr<KIGFX::VIEW_OVERLAY> m_conduitOverlay;
 
     /**
      * The export board netlist tool action object.

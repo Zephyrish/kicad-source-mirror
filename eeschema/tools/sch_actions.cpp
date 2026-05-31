@@ -1235,7 +1235,7 @@ TOOL_ACTION SCH_ACTIONS::cableSpecs( TOOL_ACTION_ARGS()
         .Scope( AS_GLOBAL )
         .FriendlyName( _( "Cable Specs..." ) )
         .Tooltip( _( "Set physical cable properties (bend radius, jacket) per net class or net" ) )
-        .Icon( BITMAPS::add_bus ) );
+        .Icon( BITMAPS::add_bus ) );         // bundle ≈ multi-conductor cable
 
 TOOL_ACTION SCH_ACTIONS::showConduitSchematic( TOOL_ACTION_ARGS()
         .Name( "eeschema.EditorControl.showConduitSchematic" )
@@ -1243,6 +1243,13 @@ TOOL_ACTION SCH_ACTIONS::showConduitSchematic( TOOL_ACTION_ARGS()
         .FriendlyName( _( "Conduit Schematic" ) )
         .Tooltip( _( "Open the Conduit Schematic editor (in PCB editor process)" ) )
         .Icon( BITMAPS::hierarchy_nav ) );
+
+TOOL_ACTION SCH_ACTIONS::showConduitSpecs( TOOL_ACTION_ARGS()
+        .Name( "eeschema.EditorControl.showConduitSpecs" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Conduit Specs..." ) )
+        .Tooltip( _( "Open the Conduit Specs dialog (PCB editor process)" ) )
+        .Icon( BITMAPS::via_annulus ) );    // ring = conduit cross-section
 
 TOOL_ACTION SCH_ACTIONS::editPageNumber( TOOL_ACTION_ARGS()
         .Name( "eeschema.EditorControl.editPageNumber" )

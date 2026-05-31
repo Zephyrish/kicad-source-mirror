@@ -2289,7 +2289,14 @@ TOOL_ACTION PCB_ACTIONS::cableSpecsFromPcb( TOOL_ACTION_ARGS()
         .Scope( AS_GLOBAL )
         .FriendlyName( _( "Cable Specs..." ) )
         .Tooltip( _( "Open the Cable Specs dialog (Schematic Editor)" ) )
-        .Icon( BITMAPS::add_bus ) );
+        .Icon( BITMAPS::add_bus ) );         // bundle ≈ multi-conductor cable
+
+TOOL_ACTION PCB_ACTIONS::routeConduit( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.Control.routeConduit" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Route Conduit" ) )
+        .Tooltip( _( "Draw a conduit polyline on the current layer for a selected conduit" ) )
+        .Icon( BITMAPS::add_tracks ) );      // active routing action
 
 // Site Layout (Phase 4)
 TOOL_ACTION PCB_ACTIONS::siteOrigin( TOOL_ACTION_ARGS()
@@ -2310,6 +2317,13 @@ TOOL_ACTION PCB_ACTIONS::layerDepths( TOOL_ACTION_ARGS()
         .Scope( AS_GLOBAL )
         .FriendlyName( _( "Conduit Depths..." ) )
         .Tooltip( _( "Set display name and burial depth for each conduit layer" ) ) );
+
+TOOL_ACTION PCB_ACTIONS::conduitSpecs( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.Control.conduitSpecs" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Conduit Specs..." ) )
+        .Tooltip( _( "Define project conduits (material, diameter, bend / clearance rules)" ) )
+        .Icon( BITMAPS::via_annulus ) );     // ring = conduit cross-section
 
 
 // PLACEMENT_TOOL
