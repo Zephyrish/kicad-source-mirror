@@ -52,11 +52,15 @@ private:
     void commitFormToCurrent();
     void loadFormFromKey( ROW_KIND aKind, const wxString& aName );
 
+    void readForm( PROJECT_FILE::CABLE_SPEC& aSpec ) const;   // form → spec
+    void populateForm( const PROJECT_FILE::CABLE_SPEC& aSpec ); // spec → form
+
     void updateCableTypesPanel();
 
     bool currentSpecIsEmpty() const;
 
     void onRowSelected( wxListEvent& aEvent );
+    void onTypeSelected( wxListEvent& aEvent );
     void onPickFromLibrary( wxCommandEvent& aEvent );
 
     SCH_EDIT_FRAME* m_frame;
@@ -70,6 +74,16 @@ private:
     ROW_KIND m_currentKind = ROW_KIND::CLASS;
     wxString m_currentName;       // class name OR net name
     wxString m_currentFromRef;    // perspective component (for NET rows)
+
+    // Cable Types panel editing: each displayed type maps to the assignments using it.
+    struct TypeRow
+    {
+        PROJECT_FILE::CABLE_SPEC spec;
+        std::vector<wxString>    classKeys;   // class names
+        std::vector<wxString>    netKeys;     // net keys (netName||fromRef)
+    };
+    std::vector<TypeRow> m_typeRows;          // parallel to m_typesCtrl data rows
+    int                  m_editingTypeIdx = -1;   // >=0 when editing a Cable Type
 
     void onSaveClicked( wxCommandEvent& aEvent );
     void onDeleteClicked( wxCommandEvent& aEvent );

@@ -31,6 +31,8 @@
 #include <view/view_overlay.h>
 #include <view/view.h>
 #include <gal/graphics_abstraction_layer.h>
+#include <set>
+
 #include <wx/choicdlg.h>
 #include <wx/menu.h>
 #include <geometry/seg.h>
@@ -2319,6 +2321,16 @@ int BOARD_EDITOR_CONTROL::ConduitSpecs( const TOOL_EVENT& aEvent )
 
     DIALOG_CONDUIT_SPECS dlg( editFrame );
     dlg.ShowModal();
+
+    // Spec edits (bend radius, clearance, …) must apply to already-routed conduits
+    // immediately, not just newly-routed ones. A refresh re-resolves every conduit's
+    // spec-derived values and re-pushes the Site Layout overlay.
+    if( CONDUIT_SCHEMATIC_FRAME* conduitFrame = dynamic_cast<CONDUIT_SCHEMATIC_FRAME*>(
+                wxWindow::FindWindowByName( CONDUIT_SCHEMATIC_FRAME_NAME ) ) )
+    {
+        conduitFrame->RefreshFromBoard();
+    }
+
     return 0;
 }
 
@@ -2352,25 +2364,84 @@ int BOARD_EDITOR_CONTROL::RouteConduit( const TOOL_EVENT& aEvent )
         return 0;
     }
 
+    // Mark conduits that already have a route so the engineer doesn't re-route one
+    // by accident (wxSingleChoiceDialog can't grey items, so we annotate the label).
+    std::vector<wxString> routed = conduitFrame->GetRoutedConduitNames();
+    std::set<wxString>    routedSet( routed.begin(), routed.end() );
+
     wxArrayString choices;
     for( const wxString& n : names )
-        choices.Add( n );
+    {
+        wxString label = conduitFrame->GetConduitConnectionLabel( n );   // "C-101 (MB1 - MB2 - MV)"
+        if( routedSet.count( n ) )
+            label += _( "  (already routed)" );
+        choices.Add( label );
+    }
 
     wxSingleChoiceDialog picker( frame, _( "Choose a conduit to route:" ),
                                  _( "Route Conduit" ), choices );
     if( picker.ShowModal() != wxID_OK )
         return 0;
 
-    wxString chosenName = picker.GetStringSelection();
-    int      chosenLayer = static_cast<int>( frame->GetActiveLayer() );
+    wxString chosenName = names[ picker.GetSelection() ];
+
+    // ---- Choose the routing layer (matches the board's enabled copper layers) ----
+    // Auto-pick by matching the circuit's net-class name to a copper layer's name
+    // (layers in Conduit Depths are named to match net classes, e.g. "MV"). Fall back
+    // to the conduit's existing route layer; otherwise let the engineer pick.
+    wxString circuitClass = conduitFrame->GetConduitNetClassName( chosenName );
+    int      conduitLayer = conduitFrame->GetConduitRouteLayer( chosenName );
+
+    std::vector<PCB_LAYER_ID> layerIds;
+    wxArrayString             layerChoices;
+    int                       activeSel = 0;
+    int                       presetSel = -1;
+
+    for( PCB_LAYER_ID lyr : frame->GetBoard()->GetEnabledLayers().CuStack() )
+    {
+        wxString layerName = frame->GetBoard()->GetLayerName( lyr );
+
+        if( lyr == frame->GetActiveLayer() )
+            activeSel = (int) layerIds.size();
+
+        // Net-class name == layer name → this is the circuit's layer (case-insensitive).
+        if( !circuitClass.IsEmpty() && layerName.IsSameAs( circuitClass, false ) )
+            presetSel = (int) layerIds.size();
+
+        // Fall back to the conduit's own route layer only if no name match found yet.
+        if( presetSel < 0 && static_cast<int>( lyr ) == conduitLayer )
+            presetSel = (int) layerIds.size();
+
+        layerIds.push_back( lyr );
+        layerChoices.Add( layerName );
+    }
+
+    if( layerIds.empty() )
+        return 0;
+
+    int chosenLayer;
+    if( presetSel >= 0 )
+    {
+        chosenLayer = static_cast<int>( layerIds[ presetSel ] );   // circuit's layer
+    }
+    else
+    {
+        wxSingleChoiceDialog layerPicker( frame, _( "Route on which layer?" ),
+                                          _( "Route Conduit" ), layerChoices );
+        layerPicker.SetSelection( activeSel );
+        if( layerPicker.ShowModal() != wxID_OK )
+            return 0;
+
+        chosenLayer = static_cast<int>( layerIds[ layerPicker.GetSelection() ] );
+    }
 
     // ---- Local-frame angle snapping ----------------------------------------
-    // Conduit segments snap to 22.5° increments (0 / 22.5 / 45 / 67.5 / 90 …),
-    // measured from the site-origin rotation rather than the global axes, so the
-    // local frame drives the geometry. The first point is placed freely (near the
-    // equipment); every subsequent point snaps relative to the previous one.
-    const double siteRotRad = frame->Prj().GetProjectFile().m_SiteOriginRotationDeg
-                              * M_PI / 180.0;
+    // Conduit segments snap to 22.5° increments (0 / 22.5 / 45 / 67.5 / 90 …) in the
+    // LOCAL board frame (the frame the equipment is placed in). The Site Origin
+    // rotation is geo-reference metadata only and must NOT tilt the snap grid, so it
+    // is intentionally not applied here. First point is placed freely; subsequent
+    // points snap relative to the previous one.
+    const double siteRotRad = 0.0;
     const double snapStepRad = M_PI / 8.0;   // 22.5°
 
     auto snapToLocalAngle =
@@ -2434,6 +2505,28 @@ int BOARD_EDITOR_CONTROL::RouteConduit( const TOOL_EVENT& aEvent )
     preview->SetIsFill( false );
     preview->SetStrokeColor( KIGFX::COLOR4D( 0.9, 0.5, 0.1, 1.0 ) );
     preview->SetLineWidth( 200000 );
+
+    // ---- Highlight the terminations the conduit's circuits attach to ----
+    // (like KiCad highlighting target pads while routing a trace) so the engineer
+    // can see which conduit is being routed without checking the list.
+    std::shared_ptr<KIGFX::VIEW_OVERLAY> termOverlay = view->MakeOverlay();
+    {
+        std::vector<wxPoint> terms =
+                conduitFrame->GetConduitTerminationPoints( chosenName, frame->GetBoard() );
+
+        double scale  = view->GetGAL()->GetWorldScale();
+        double radius = ( scale > 0.0 ) ? 12.0 / scale : 300000.0;
+
+        termOverlay->SetIsStroke( true );
+        termOverlay->SetIsFill( false );
+        termOverlay->SetStrokeColor( KIGFX::COLOR4D( 1.0, 1.0, 0.2, 1.0 ) );   // bright yellow
+        termOverlay->SetLineWidth( ( scale > 0.0 ) ? (int) ( 2.0 / scale ) : 50000 );
+
+        for( const wxPoint& p : terms )
+            termOverlay->Circle( VECTOR2I( p.x, p.y ), radius );
+
+        view->Update( termOverlay.get() );
+    }
 
     std::vector<wxPoint> points;
 
@@ -2578,9 +2671,11 @@ int BOARD_EDITOR_CONTROL::RouteConduit( const TOOL_EVENT& aEvent )
         }
     }
 
-    // Cleanup the preview overlay regardless of outcome
+    // Cleanup the preview + termination-highlight overlays regardless of outcome
     view->Remove( preview.get() );
     preview.reset();
+    view->Remove( termOverlay.get() );
+    termOverlay.reset();
 
     getViewControls()->ShowCursor( false );
     frame->GetCanvas()->SetCurrentCursor( KICURSOR::ARROW );
@@ -2732,9 +2827,9 @@ int BOARD_EDITOR_CONTROL::EditConduitRoute( const TOOL_EVENT& aEvent )
     bool     extendAtFront = false;   // true = prepend at points.front(), else append
     VECTOR2I extendCursor;            // current (snapped) rubber-band tip
 
-    // Local-frame 22.5° snapping relative to a fixed previous point.
-    const double siteRotRad = frame->Prj().GetProjectFile().m_SiteOriginRotationDeg
-                              * M_PI / 180.0;
+    // 22.5° snapping in the LOCAL board frame (Site Origin rotation is geo-reference
+    // only and must not tilt the snap grid).
+    const double siteRotRad = 0.0;
     auto snapToLocalAngle = [&]( const VECTOR2I& aLast, const VECTOR2I& aCursor ) -> VECTOR2I
     {
         double dx = aCursor.x - aLast.x;
@@ -2861,7 +2956,8 @@ int BOARD_EDITOR_CONTROL::EditConduitRoute( const TOOL_EVENT& aEvent )
         else if( evt->IsClick( BUT_RIGHT ) )
         {
             // Context menu for deleting nodes / sections / anchors / the whole route.
-            enum { ID_DEL_NODE = 1, ID_DEL_SECTION, ID_REMOVE_ANCHOR, ID_DELETE_ROUTE };
+            enum { ID_DEL_NODE = 1, ID_DEL_SECTION, ID_REMOVE_ANCHOR, ID_DELETE_ROUTE,
+                   ID_EDIT_POINTS };
             int nodeHit = hitNode( cursorPos );
             int segHit  = ( nodeHit < 0 ) ? hitSegment( cursorPos ) : -1;
             int last    = (int) points.size() - 1;
@@ -2881,6 +2977,7 @@ int BOARD_EDITOR_CONTROL::EditConduitRoute( const TOOL_EVENT& aEvent )
             }
             if( menu.GetMenuItemCount() > 0 )
                 menu.AppendSeparator();
+            menu.Append( ID_EDIT_POINTS, _( "Edit Route Points (table)…" ) );
             menu.Append( ID_DELETE_ROUTE, _( "Delete Entire Conduit Route" ) );
 
             int sel = frame->GetCanvas()->GetPopupMenuSelectionFromUser( menu );
@@ -2923,6 +3020,11 @@ int BOARD_EDITOR_CONTROL::EditConduitRoute( const TOOL_EVENT& aEvent )
                 }
                 applyNow();
                 redraw();
+            }
+            else if( sel == ID_EDIT_POINTS )
+            {
+                conduitFrame->EditRoutePointsDialog( chosenName );   // numeric table editor
+                break;   // dialog applied its own changes; leave the canvas tool
             }
             else if( sel == ID_DELETE_ROUTE )
             {

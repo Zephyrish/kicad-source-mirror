@@ -3748,11 +3748,19 @@ void PCB_EDIT_FRAME::UpdateConduitOverlay(
     // line thickness reads as the conduit's outer size in feet. A floor keeps tiny
     // conduits visible.
     constexpr int CONDUIT_MIN_WIDTH_IU = 50000;     // ~0.05 ft floor
-    const KIGFX::COLOR4D conduitColor( 0.9, 0.5, 0.1, 0.85 );    // orange-ish
 
     m_conduitOverlay->SetIsStroke( true );
     m_conduitOverlay->SetIsFill( false );
-    m_conduitOverlay->SetStrokeColor( conduitColor );
+
+    // Conduit takes the colour of its routing layer (matches the Layers panel).
+    auto layerColor = [&]( int aLayer ) -> KIGFX::COLOR4D
+    {
+        if( aLayer < 0 )
+            return KIGFX::COLOR4D( 0.9, 0.5, 0.1, 0.85 );    // fallback orange
+        KIGFX::COLOR4D c = GetColorSettings()->GetColor( static_cast<PCB_LAYER_ID>( aLayer ) );
+        c.a = 0.85;
+        return c;
+    };
 
     const KIGFX::COLOR4D faultyColor( 0.95, 0.15, 0.15, 0.95 );   // red, dashed
     const KIGFX::COLOR4D anchorColor( 0.2, 0.9, 0.5, 0.9 );       // green tether
@@ -3802,7 +3810,7 @@ void PCB_EDIT_FRAME::UpdateConduitOverlay(
         bool faulty = route.faulty || !fits;
 
         m_conduitOverlay->SetLineWidth( std::max( route.widthIu, CONDUIT_MIN_WIDTH_IU ) );
-        m_conduitOverlay->SetStrokeColor( faulty ? faultyColor : conduitColor );
+        m_conduitOverlay->SetStrokeColor( faulty ? faultyColor : layerColor( route.layer ) );
 
         if( faulty )
         {

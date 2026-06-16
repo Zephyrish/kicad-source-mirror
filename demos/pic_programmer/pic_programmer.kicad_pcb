@@ -13822,13 +13822,13 @@
 	(footprint "Package_TO_SOT_THT:TO-220-3_Horizontal_TabDown"
 		(layer "F.Cu")
 		(uuid "00000000-0000-0000-0000-00005a2a01d8")
-		(at 91.66 35.63)
+		(at 129.26 28.46)
 		(descr "TO-220-3, Horizontal, RM 2.54mm, see https://www.vishay.com/docs/66542/to-220-1.pdf, generated with kicad-footprint-generator TO_SOT_THT_generate.py")
 		(tags "TO-220-3 Horizontal RM 2.54mm")
 		(property "Reference" "U3"
 			(at 2.54 -20.41 0)
 			(layer "F.SilkS")
-			(uuid "e77940c9-f416-4cf1-9e28-1de9a3c10525")
+			(uuid "cb000c18-5e1a-4a3e-8092-8bde3c8d7eab")
 			(effects
 				(font
 					(size 1 1)
@@ -13839,7 +13839,7 @@
 		(property "Value" "7805"
 			(at 2.54 1.95 0)
 			(layer "F.Fab")
-			(uuid "9492adfd-fd2f-494f-9cf8-6ec7f8db3e4b")
+			(uuid "b68568ae-bd11-4bca-ae6d-2db7870c0313")
 			(effects
 				(font
 					(size 1 1)
@@ -13851,7 +13851,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "c7f85ee0-d9c9-4831-9e6f-0913f4f8d4cc")
+			(uuid "3a1a0465-5df4-4410-bc83-2775de85bcfb")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13862,7 +13862,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "1b0ed790-8a2b-4d9e-be07-58a173ced2d4")
+			(uuid "aba87925-c5fe-4302-a38d-0d1784540418")
 			(effects
 				(font
 					(size 1.27 1.27)

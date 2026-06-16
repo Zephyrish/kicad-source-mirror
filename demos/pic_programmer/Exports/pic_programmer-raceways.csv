@@ -1,0 +1,8 @@
+RACEWAY #,Spec,CONDUIT SIZE,Material,RACEWAY LENGTH (FT),Circuit #'s inside
+C-103,"2""PVC","2.00""",PVC,48.27,"Net-(C5-Pad1), Net-(U4-Vc)"
+C-101,,"4.00""",PVC,,"/PC-CLOCK-OUT, /PC-DATA-IN-CAT, /PC-DATA-OUT, /VPP_ON, GND"
+C-102,,"2.00""",EMT,,GND
+C-104,,"2.00""",EMT,,
+C-105,,"2.00""",EMT,,
+C-107,,"2.00""",EMT,,"Net-(D1-A), Net-(D1-K), GND"
+C-106,"2""PVC","2.00""",PVC,83.67,"GND, VCC"

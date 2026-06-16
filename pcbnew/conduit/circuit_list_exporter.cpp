@@ -54,10 +54,34 @@ static std::string formatSize( double aValue, PROJECT_FILE::CABLE_SIZE_UNIT aUni
 
 // ---- Spec lookup ----------------------------------------------------------
 
+// Resolve a net's *assigned* class name (highest-priority non-Default constituent of
+// the effective netclass) so class-level specs reach pattern-assigned nets too.
+static wxString assignedClassName( NET_SETTINGS* aNetSettings, const wxString& aNetName,
+                                   const wxString& aDefaultName )
+{
+    if( !aNetSettings )
+        return aDefaultName;
+
+    std::shared_ptr<NETCLASS> nc = aNetSettings->GetEffectiveNetClass( aNetName );
+    if( !nc )
+        return aDefaultName;
+
+    const std::vector<NETCLASS*>& constituents = nc->GetConstituentNetclasses();
+    if( constituents.empty() )
+        return nc->GetName();
+
+    for( NETCLASS* c : constituents )
+        if( c->GetName() != NETCLASS::Default )
+            return c->GetName();
+
+    return aDefaultName;
+}
+
+
 static bool resolveSpec( const CABLE* aCable,
                          PROJECT_FILE& aProj,
                          const wxString& aDefaultClassName,
-                         const std::map<wxString, wxString>& aNetToClass,
+                         NET_SETTINGS* aNetSettings,
                          PROJECT_FILE::CABLE_SPEC& aOut )
 {
     // 1. Per-perspective override
@@ -69,9 +93,9 @@ static bool resolveSpec( const CABLE* aCable,
         return true;
     }
 
-    // 2. Class-level spec
-    auto cit = aNetToClass.find( aCable->GetName() );
-    wxString className = ( cit != aNetToClass.end() ) ? cit->second : aDefaultClassName;
+    // 2. Class-level spec — resolve the net's effective (assigned) class.
+    wxString className = assignedClassName( aNetSettings, aCable->GetName(),
+                                            aDefaultClassName );
     auto sit = aProj.m_CableSpecs.find( className );
     if( sit != aProj.m_CableSpecs.end() )
     {
@@ -115,26 +139,15 @@ bool CIRCUIT_LIST_EXPORTER::ExportCsv(
         << "NOTES"
         << "\n";
 
-    // Build net name -> class name lookup once.
-    std::map<wxString, wxString> netToClass;
+    // Default class name (effective classes are resolved per-cable below).
     wxString defaultClassName = wxT( "Default" );
 
     auto netSettings = aProjectFile.NetSettings();
-    if( netSettings )
+    if( netSettings && netSettings->GetDefaultNetclass() )
     {
-        if( auto def = netSettings->GetDefaultNetclass() )
-        {
-            wxString nm = def->GetName();
-            if( !nm.IsEmpty() )
-                defaultClassName = nm;
-        }
-
-        const auto& assignments = netSettings->GetNetclassLabelAssignments();
-        for( const auto& [netName, classes] : assignments )
-        {
-            if( !classes.empty() )
-                netToClass[ netName ] = *classes.begin();
-        }
+        wxString nm = netSettings->GetDefaultNetclass()->GetName();
+        if( !nm.IsEmpty() )
+            defaultClassName = nm;
     }
 
     // One row per (cable, conduit) pairing.
@@ -144,7 +157,7 @@ bool CIRCUIT_LIST_EXPORTER::ExportCsv(
         {
             PROJECT_FILE::CABLE_SPEC spec;
             bool hasSpec = resolveSpec( cable, aProjectFile, defaultClassName,
-                                        netToClass, spec );
+                                        netSettings.get(), spec );
 
             // Build each cell. Empty cells for fields that need Site Layout data.
             ofs << csvEscape( cable->GetName() ) << ",";          // Circuit #
@@ -243,6 +256,12 @@ bool RACEWAY_LIST_EXPORTER::ExportCsv(
         << "CONDUIT SIZE,"
         << "Material,"
         << "RACEWAY LENGTH (FT),"
+        << "TOTAL BEND (DEG),"
+        << "90° BENDS,"
+        << "67.5° BENDS,"
+        << "45° BENDS,"
+        << "22.5° BENDS,"
+        << "FILL %,"
         << "Circuit #'s inside"
         << "\n";
 
@@ -268,6 +287,33 @@ bool RACEWAY_LIST_EXPORTER::ExportCsv(
                 snprintf( buf, sizeof( buf ), "%.2f", len );
                 ofs << buf;
             }
+        }
+        ofs << ",";
+
+        // TOTAL BEND (DEG) — sum of routing bends + 180° for the two depth dives.
+        {
+            double bend = conduit->GetCachedTotalBendDeg();
+            if( bend > 0.0 )
+            {
+                char buf[64];
+                snprintf( buf, sizeof( buf ), "%.1f", bend );
+                ofs << buf;
+            }
+        }
+        ofs << ",";
+
+        // Bend counts by type (90° includes the two depth dives).
+        ofs << conduit->GetCachedBend90() << ",";
+        ofs << conduit->GetCachedBend67() << ",";
+        ofs << conduit->GetCachedBend45() << ",";
+        ofs << conduit->GetCachedBend22() << ",";
+
+        // FILL % — only meaningful when every cable's size is known.
+        if( conduit->HasAllCableSizesKnown() && conduit->GetDiameterInches() > 0.0 )
+        {
+            char buf[64];
+            snprintf( buf, sizeof( buf ), "%.1f%%", conduit->ComputeFillPercent() );
+            ofs << csvEscape( wxString::FromUTF8( buf ) );
         }
         ofs << ",";
 

@@ -42,6 +42,37 @@ static wxString netSpecKey( const wxString& aNetName, const wxString& aFromRef )
 }
 
 
+// Defined later; used by onSaveClicked to re-find an edited cable type.
+static wxString makeFingerprint( const PROJECT_FILE::CABLE_SPEC& s );
+
+
+// Resolve the net's *assigned* class name for cable-spec keying. GetEffectiveNetClass
+// returns a COMPOSITE (the assigned class layered over Default) for an assigned net, so
+// we pull the highest-priority non-Default constituent. Falls back to the default name.
+static wxString assignedClassName( NET_SETTINGS* aNetSettings, const wxString& aNetName,
+                                   const wxString& aDefaultName )
+{
+    if( !aNetSettings )
+        return aDefaultName;
+
+    std::shared_ptr<NETCLASS> nc = aNetSettings->GetEffectiveNetClass( aNetName );
+    if( !nc )
+        return aDefaultName;
+
+    const std::vector<NETCLASS*>& constituents = nc->GetConstituentNetclasses();
+
+    if( constituents.empty() )         // single (non-composite) class
+        return nc->GetName();
+
+    for( NETCLASS* c : constituents )  // sorted highest-priority first
+    {
+        if( c->GetName() != NETCLASS::Default )
+            return c->GetName();
+    }
+    return aDefaultName;
+}
+
+
 DIALOG_CABLE_SPECS::DIALOG_CABLE_SPECS( SCH_EDIT_FRAME* aParent,
                                         const wxString& aInitialName ) :
         wxDialog( aParent, wxID_ANY, _( "Cable Specs" ),
@@ -230,6 +261,8 @@ DIALOG_CABLE_SPECS::DIALOG_CABLE_SPECS( SCH_EDIT_FRAME* aParent,
 
     m_listCtrl->Bind( wxEVT_LIST_ITEM_SELECTED,
             [this]( wxListEvent& e ) { onRowSelected( e ); } );
+    m_typesCtrl->Bind( wxEVT_LIST_ITEM_SELECTED,
+            [this]( wxListEvent& e ) { onTypeSelected( e ); } );
     m_pickLibraryBtn->Bind( wxEVT_BUTTON,
             [this]( wxCommandEvent& e ) { onPickFromLibrary( e ); } );
 
@@ -337,22 +370,19 @@ void DIALOG_CABLE_SPECS::buildRows()
         }
     }
 
-    // Map each net to its assigned class (if any). Default class if not assigned.
+    // Map each net to its EFFECTIVE class. GetEffectiveNetClass() honours pattern
+    // assignments, label assignments, and the default class — whereas the label
+    // assignments alone miss nets put into a class via membership patterns, which
+    // is how class-level cable specs failed to reach their nets.
     wxString defaultClassName = wxT( "Default" );
     if( auto netSettings = m_frame->Prj().GetProjectFile().NetSettings() )
     {
         if( auto def = netSettings->GetDefaultNetclass() )
             defaultClassName = def->GetName();
 
-        const auto& assignments = netSettings->GetNetclassLabelAssignments();
         for( const auto& [netName, refs] : netToRefs )
-        {
-            auto ait = assignments.find( netName );
-            if( ait != assignments.end() && !ait->second.empty() )
-                netToClass[ netName ] = *ait->second.begin();
-            else
-                netToClass[ netName ] = defaultClassName;
-        }
+            netToClass[ netName ] = assignedClassName( netSettings.get(), netName,
+                                                       defaultClassName );
     }
 
     // Generate per-perspective net rows; each perspective gets its own spec.
@@ -387,7 +417,9 @@ void DIALOG_CABLE_SPECS::buildRows()
             r.toRef    = to;
             r.netCode  = netToCode[ netName ];
             r.netClass = netToClass[ netName ];
-            r.hasSpec  = netHasSpec( netName, refsVec[i] );
+            // "Assigned" (gray) if it has a per-net spec OR inherits one from its class.
+            r.hasSpec  = netHasSpec( netName, refsVec[i] )
+                         || ( m_classSpecs.find( r.netClass ) != m_classSpecs.end() );
             netRows.push_back( r );
         }
     }
@@ -558,8 +590,12 @@ void DIALOG_CABLE_SPECS::commitFormToCurrent()
         key = netSpecKey( m_currentName, m_currentFromRef );
 
     auto& target = ( m_currentKind == ROW_KIND::CLASS ) ? m_classSpecs : m_netSpecs;
-    PROJECT_FILE::CABLE_SPEC& spec = target[ key ];
+    readForm( target[ key ] );
+}
 
+
+void DIALOG_CABLE_SPECS::readForm( PROJECT_FILE::CABLE_SPEC& spec ) const
+{
     spec.supplier         = m_supplier->GetValue();
     spec.part_number      = m_partNumber->GetValue();
     m_outerDiameter->GetValue().ToDouble( &spec.outer_diameter_in );
@@ -581,20 +617,8 @@ void DIALOG_CABLE_SPECS::commitFormToCurrent()
 }
 
 
-void DIALOG_CABLE_SPECS::loadFormFromKey( ROW_KIND aKind, const wxString& aName )
+void DIALOG_CABLE_SPECS::populateForm( const PROJECT_FILE::CABLE_SPEC& spec )
 {
-    wxString key;
-    if( aKind == ROW_KIND::CLASS )
-        key = aName;
-    else
-        key = netSpecKey( aName, m_currentFromRef );
-
-    auto& source = ( aKind == ROW_KIND::CLASS ) ? m_classSpecs : m_netSpecs;
-    auto  it = source.find( key );
-
-    PROJECT_FILE::CABLE_SPEC spec = ( it != source.end() ) ? it->second
-                                                           : PROJECT_FILE::CABLE_SPEC{};
-
     m_supplier->SetValue( spec.supplier );
     m_partNumber->SetValue( spec.part_number );
     m_outerDiameter->SetValue( wxString::Format( wxT( "%.3f" ), spec.outer_diameter_in ) );
@@ -614,6 +638,23 @@ void DIALOG_CABLE_SPECS::loadFormFromKey( ROW_KIND aKind, const wxString& aName 
 }
 
 
+void DIALOG_CABLE_SPECS::loadFormFromKey( ROW_KIND aKind, const wxString& aName )
+{
+    wxString key;
+    if( aKind == ROW_KIND::CLASS )
+        key = aName;
+    else
+        key = netSpecKey( aName, m_currentFromRef );
+
+    auto& source = ( aKind == ROW_KIND::CLASS ) ? m_classSpecs : m_netSpecs;
+    auto  it = source.find( key );
+
+    PROJECT_FILE::CABLE_SPEC spec = ( it != source.end() ) ? it->second
+                                                           : PROJECT_FILE::CABLE_SPEC{};
+    populateForm( spec );
+}
+
+
 bool DIALOG_CABLE_SPECS::currentSpecIsEmpty() const
 {
     return false;       // unused, retained for future use
@@ -629,6 +670,8 @@ void DIALOG_CABLE_SPECS::onRowSelected( wxListEvent& aEvent )
     // Save current form before switching
     commitFormToCurrent();
 
+    m_editingTypeIdx = -1;          // back to per-row (class/net) editing
+
     const Row& r = m_rows[ rowIdx ];
     m_currentKind    = r.kind;
     m_currentName    = r.name;
@@ -642,6 +685,37 @@ void DIALOG_CABLE_SPECS::onRowSelected( wxListEvent& aEvent )
 
 void DIALOG_CABLE_SPECS::onSaveClicked( wxCommandEvent& )
 {
+    // Editing a Cable Type: apply the edited spec to EVERY class/net that uses it.
+    if( m_editingTypeIdx >= 0 && m_editingTypeIdx < (int) m_typeRows.size() )
+    {
+        PROJECT_FILE::CABLE_SPEC edited;
+        readForm( edited );
+
+        TypeRow& tr = m_typeRows[ m_editingTypeIdx ];
+        for( const wxString& ck : tr.classKeys )
+            m_classSpecs[ ck ] = edited;
+        for( const wxString& nk : tr.netKeys )
+            m_netSpecs[ nk ] = edited;
+
+        TransferDataFromWindow();   // persist to project
+        buildRows();
+        renderList();
+        updateCableTypesPanel();    // rebuilds m_typeRows (fingerprint changed)
+
+        // Re-select the edited type by matching its new fingerprint.
+        wxString fp = makeFingerprint( edited );
+        for( int i = 0; i < (int) m_typeRows.size(); ++i )
+        {
+            if( makeFingerprint( m_typeRows[i].spec ) == fp )
+            {
+                m_editingTypeIdx = i;
+                m_typesCtrl->SetItemState( i, wxLIST_STATE_SELECTED, wxLIST_STATE_SELECTED );
+                break;
+            }
+        }
+        return;
+    }
+
     // Save the current form, push working state to project, persist, and refresh the
     // list so the just-edited item moves to the bottom of its group.
     commitFormToCurrent();
@@ -817,22 +891,43 @@ void DIALOG_CABLE_SPECS::updateCableTypesPanel()
             && s.insulation_type.IsEmpty() && s.primary_size_value == 0.0;
     };
 
-    // Group all specs (classes + nets) by fingerprint.
-    std::map<wxString, std::pair<PROJECT_FILE::CABLE_SPEC, std::vector<wxString>>> types;
+    // Group all specs (classes + nets) by fingerprint into m_typeRows (insertion
+    // order), tracking the assignment keys so a type edit can update every use.
+    m_typeRows.clear();
+    std::map<wxString, int>            fpToIdx;
+    std::vector<std::vector<wxString>> labels;   // parallel to m_typeRows
 
-    auto addAssignment = [&]( const PROJECT_FILE::CABLE_SPEC& spec,
-                              const wxString& label )
+    auto addAssignment = [&]( const PROJECT_FILE::CABLE_SPEC& spec, const wxString& label,
+                              bool isClass, const wxString& key )
     {
         if( specIsEmpty( spec ) )
             return;
+
         wxString fp = makeFingerprint( spec );
-        auto& entry = types[ fp ];
-        entry.first = spec;
-        entry.second.push_back( label );
+        auto     it = fpToIdx.find( fp );
+        int      idx;
+        if( it == fpToIdx.end() )
+        {
+            idx = (int) m_typeRows.size();
+            fpToIdx[ fp ] = idx;
+            m_typeRows.push_back( TypeRow{ spec, {}, {} } );
+            labels.emplace_back();
+        }
+        else
+        {
+            idx = it->second;
+        }
+
+        if( isClass )
+            m_typeRows[ idx ].classKeys.push_back( key );
+        else
+            m_typeRows[ idx ].netKeys.push_back( key );
+
+        labels[ idx ].push_back( label );
     };
 
     for( const auto& [name, spec] : m_classSpecs )
-        addAssignment( spec, wxT( "[Class] " ) + name );
+        addAssignment( spec, wxT( "[Class] " ) + name, true, name );
 
     for( const auto& [key, spec] : m_netSpecs )
     {
@@ -842,38 +937,51 @@ void DIALOG_CABLE_SPECS::updateCableTypesPanel()
         {
             wxString net  = key.Left( sep );
             wxString from = key.Mid( sep + 2 );
-            addAssignment( spec, net + wxT( " (from " ) + from + wxT( ")" ) );
+            addAssignment( spec, net + wxT( " (from " ) + from + wxT( ")" ), false, key );
         }
         else
         {
-            addAssignment( spec, key );
+            addAssignment( spec, key, false, key );
         }
     }
 
     m_typesCtrl->DeleteAllItems();
 
-    long idx = 0;
-    for( const auto& [fp, info] : types )
+    for( int idx = 0; idx < (int) m_typeRows.size(); ++idx )
     {
-        const auto& spec   = info.first;
-        const auto& usedBy = info.second;
-
         wxString usedJoined;
-        for( size_t i = 0; i < usedBy.size(); ++i )
+        for( size_t i = 0; i < labels[ idx ].size(); ++i )
         {
             if( i > 0 ) usedJoined += wxT( ", " );
-            usedJoined += usedBy[i];
+            usedJoined += labels[ idx ][ i ];
         }
 
-        m_typesCtrl->InsertItem( idx, makeDisplayName( spec ) );
+        m_typesCtrl->InsertItem( idx, makeDisplayName( m_typeRows[ idx ].spec ) );
         m_typesCtrl->SetItem( idx, 1, _( "Manual" ) );    // library support: future
         m_typesCtrl->SetItem( idx, 2, usedJoined );
-        idx++;
+        m_typesCtrl->SetItemData( idx, idx );             // → m_typeRows index
     }
 
-    if( idx == 0 )
+    if( m_typeRows.empty() )
     {
         m_typesCtrl->InsertItem( 0, _( "(no cable types defined yet)" ) );
+        m_typesCtrl->SetItemData( 0, -1 );
         m_typesCtrl->SetItemTextColour( 0, wxColour( 130, 130, 130 ) );
     }
+}
+
+
+void DIALOG_CABLE_SPECS::onTypeSelected( wxListEvent& aEvent )
+{
+    long idx = aEvent.GetData();
+    if( idx < 0 || idx >= (long) m_typeRows.size() )
+        return;
+
+    // Switch to "edit this cable type" mode: load its spec, and on Save apply the
+    // edits to every class/net that uses this type.
+    commitFormToCurrent();          // no-op in type mode (m_currentName empty)
+    m_currentName.Clear();
+    m_currentFromRef.Clear();
+    m_editingTypeIdx = (int) idx;
+    populateForm( m_typeRows[ idx ].spec );
 }

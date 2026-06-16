@@ -86,7 +86,7 @@ private:
 
     static constexpr int CONDUIT_WIDTH       = 220;
     static constexpr int CONDUIT_HEADER_H    = 30;
-    static constexpr int CONDUIT_FOOTER_H    = 36;   // 2 lines: length + fill
+    static constexpr int CONDUIT_FOOTER_H    = 54;   // 3 lines: length + total bend + fill
     static constexpr int CABLE_ROW_H         = 16;
     static constexpr int CONDUIT_MIN_BODY_H  = 30;
     static constexpr int OUTER_PADDING       = 16;

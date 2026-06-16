@@ -1,0 +1,595 @@
+{
+  "conduits": [
+    {
+      "bend_radius_iu": 3000000.0,
+      "cables": [
+        {
+          "area_mm2": 506.7074790974977,
+          "from_ref": "C5",
+          "name": "Net-(C5-Pad1)",
+          "net_code": 105,
+          "pad_uuids": [
+            "0ccd58db-a1f1-4d40-b48e-d9bd46f59b5b",
+            "0a632d53-6371-4c98-ad68-14a4d1410391"
+          ],
+          "to_ref": "R10"
+        },
+        {
+          "area_mm2": 506.7074790974977,
+          "from_ref": "R10",
+          "name": "Net-(U4-Vc)",
+          "net_code": 44,
+          "pad_uuids": [
+            "951f69aa-85a1-49a9-a712-cf96a1912237",
+            "f6c24668-69e6-443d-8c36-17ebba6a6669",
+            "ea4138ad-e674-483c-b45b-160098381211"
+          ],
+          "to_ref": "C4, U4"
+        },
+        {
+          "area_mm2": 506.7074790974977,
+          "from_ref": "D11",
+          "name": "/PC-DATA-IN-CAT",
+          "net_code": 91,
+          "pad_uuids": [
+            "cb07905e-580a-4dc2-be6b-6d6f16c14fea",
+            "93547e8f-d77b-4d97-9048-37f696ed9e44",
+            "e7719da0-7af6-4a38-8a13-eb3cab7dff9e",
+            "128cbd68-91ba-495a-a582-42974cd299f4"
+          ],
+          "to_ref": "J1, Q1, R11"
+        },
+        {
+          "area_mm2": 506.7074790974977,
+          "from_ref": "C9",
+          "name": "Net-(Q2-B)",
+          "net_code": 102,
+          "pad_uuids": [
+            "8c289fa7-a8df-4bed-98cb-75a80af6fa0f",
+            "dd3fa120-5291-4fdd-8e09-f94bff25c558",
+            "e6a64fa2-f210-4851-9544-f5105dba7f81",
+            "0912be8d-c58b-41ee-8866-72390bfba589"
+          ],
+          "to_ref": "Q2, R11, R7"
+        },
+        {
+          "area_mm2": 506.7074790974977,
+          "from_ref": "C9",
+          "name": "VPP",
+          "net_code": 103,
+          "pad_uuids": [
+            "3ceb24fb-e449-4666-829e-1fe6f3c7e7cc",
+            "8da0a0ef-6999-4384-98f0-54c034e21332",
+            "f2f3802c-e340-4501-86ce-4797c29184f9",
+            "825cc0d4-934d-4733-9200-782a032041bd",
+            "e40c18fc-ac21-4051-b91f-7ebe7e73cc59",
+            "7b25a167-1ec9-4e30-82cc-a6a01a98687c"
+          ],
+          "to_ref": "C3, D10, Q2, R16, R7"
+        },
+        {
+          "area_mm2": 506.7074790974977,
+          "from_ref": "C7",
+          "name": "/pic_sockets/VCC_PIC",
+          "net_code": 13,
+          "pad_uuids": [
+            "90b0c75c-0cf4-4a7c-8038-56807808880e",
+            "dcee9d7d-852b-40d4-bc8a-88841dcc3689",
+            "04e5217d-a40a-4f71-81e2-838f8805992f",
+            "f5c238a8-32f5-452e-b9be-a084dd8a637e",
+            "227965f7-c467-4166-8dbe-a03ba3a3e833",
+            "ad7eb14f-6c5c-4996-a54a-7ce82fc42954",
+            "23fa1ecb-a602-4c2a-a858-bf3c5a25443c",
+            "70638727-0211-415c-a09c-a38686bde43a",
+            "c5ebe136-e1e5-44dc-ac99-7cf08c8776a4",
+            "cb9170b9-0a3a-4f85-a74d-3639ecb40222",
+            "5b196d03-cd44-4c2b-9a91-fadc24ae5f4b"
+          ],
+          "to_ref": "C6, JP1, P2, P3, Q3, R21, U1, U5, U6"
+        }
+      ],
+      "diameter_inches": 4.0,
+      "end_anchor": "00000000-0000-0000-0000-00005a29e47a",
+      "end_offset": [
+        -11794248,
+        -21395715
+      ],
+      "faulty": false,
+      "has_end_anchor": true,
+      "has_start_anchor": false,
+      "horizontal_length_ft": 37.619144,
+      "max_fill_percent": 40.0,
+      "name": "C-103",
+      "pos_x": 128,
+      "pos_y": 190,
+      "route_layer": 2,
+      "route_points": [
+        [
+          198000000,
+          -17600000
+        ],
+        [
+          235619144,
+          -17600000
+        ]
+      ],
+      "spec_name": "4\"PVC",
+      "start_anchor": "207fd6b0-745a-48a6-94aa-9d3c5d7d47de",
+      "start_offset": [
+        0,
+        0
+      ],
+      "type": 1
+    },
+    {
+      "bend_radius_iu": 0.0,
+      "cables": [
+        {
+          "area_mm2": 506.7074790974977,
+          "from_ref": "J1",
+          "name": "/PC-CLOCK-OUT",
+          "net_code": 98,
+          "pad_uuids": [
+            "a838aafa-cdae-4835-8c0f-8ee319df5d45",
+            "7a0a8fa2-782a-445f-813e-1792b9aa4de9",
+            "bb4832a6-a61a-406c-864d-10430b123031"
+          ],
+          "to_ref": "R5, R6"
+        },
+        {
+          "area_mm2": 506.7074790974977,
+          "from_ref": "J1",
+          "name": "/PC-DATA-IN-CAT",
+          "net_code": 91,
+          "pad_uuids": [
+            "cb07905e-580a-4dc2-be6b-6d6f16c14fea",
+            "93547e8f-d77b-4d97-9048-37f696ed9e44",
+            "e7719da0-7af6-4a38-8a13-eb3cab7dff9e",
+            "128cbd68-91ba-495a-a582-42974cd299f4"
+          ],
+          "to_ref": "D11, Q1, R11"
+        },
+        {
+          "area_mm2": 506.7074790974977,
+          "from_ref": "J1",
+          "name": "/PC-DATA-OUT",
+          "net_code": 96,
+          "pad_uuids": [
+            "3316b391-66be-497c-8f2e-681907c19d99",
+            "b09cad51-8121-4174-afde-25ea6b13bf1e",
+            "8840f4d4-a2df-4160-8bfd-0265e13421e9"
+          ],
+          "to_ref": "R3, R4"
+        },
+        {
+          "area_mm2": 506.7074790974977,
+          "from_ref": "J1",
+          "name": "/VPP_ON",
+          "net_code": 95,
+          "pad_uuids": [
+            "3293adba-2f29-4fc6-b933-d8d179591629",
+            "20c4fa71-fcc7-490d-a6b2-63eb34448e1c",
+            "cd298c18-ba9b-483c-b8ff-9ef688078764"
+          ],
+          "to_ref": "R1, R2"
+        },
+        {
+          "area_mm2": 506.7074790974977,
+          "from_ref": "J1",
+          "name": "GND",
+          "net_code": 2,
+          "pad_uuids": [
+            "9a28a224-d529-43c3-a5a2-2254f4c1c34e",
+            "b88a19d4-b7e9-4329-b928-a755e0fbcd12",
+            "767ba196-18d6-4400-9540-d6d5216a1db6",
+            "5eb878d4-a2e4-4053-ae89-800d17178eaa",
+            "5a0872ae-7d8f-43c9-9473-53b348854664",
+            "e21f2df1-6823-457b-ba74-aca8b268c30a",
+            "a609ba21-4eba-4c52-8cad-e840ac81d83d",
+            "672c7e20-6dcd-4b1e-af74-c23ab734a2eb",
+            "d7c31a0a-3172-48b2-b7a7-103c25e9cc9f",
+            "64e7deff-e627-4964-9855-70f97f6e85df",
+            "7b1f43f8-7abb-4d2a-b324-17afe0765e8e",
+            "ef300f5f-a698-465c-9c03-4dbe91ed4ab1",
+            "090c2218-db7f-40c7-b56b-d819210558d8",
+            "79e18e18-ca55-4c0f-8fb2-d1c6940ae01a",
+            "a273b0cf-623c-4d6f-b31c-ff9897866902",
+            "01b9f838-6524-41ce-acc5-ed583d630f27",
+            "9d7a5352-e15e-4bc7-be40-6a81969d99da",
+            "ab171a6d-536d-4b9c-a449-5f3d865470d4",
+            "e87d765b-5b8c-4589-8d15-96246dc8529b",
+            "50160666-9b65-4129-8e24-8a0e2c6ff9b7",
+            "7e3d1eea-1cda-4ffa-a78e-0ee0266d3012",
+            "ec7a5a98-5ecd-406e-9f56-576f0b4d7e8f",
+            "72e58fca-d01d-4de2-989b-a8d4496541e7",
+            "7fdfccdb-09bb-4994-98b8-9417776e4444",
+            "564a05f5-bf9f-4a62-bfd1-ae30bd6354d1",
+            "1313139e-cb32-4e2d-8543-a77542971765",
+            "e016e14a-eb39-457f-91ee-45e550175069",
+            "a2387a59-3664-4e32-a26e-0c5f00b73ca4",
+            "4b9a41fa-aa96-4b1b-ad4b-207e36bb7a01",
+            "5b02d01d-2e85-4956-92d9-742764d5232a",
+            "cab31471-1370-4da8-9f26-65e145ea6e49",
+            "8ceb963f-b9bb-4c1a-89a2-8526fdae77ee",
+            "c3b96f46-1ade-4511-87a0-7f4fb65fe6ff",
+            "e0909086-44aa-4d3f-ad6b-3616163cca97",
+            "42c4b821-22b5-451f-9c76-31ccee646782",
+            "4f608163-05ac-4877-918b-f17411efde8d",
+            "0c020ba0-b6e7-4e20-8970-2a3d9eaa3c0d",
+            "cca37e91-7f07-4328-aed3-2f42d3e49ecc",
+            "00bbbb0f-c898-49d4-9524-34f2608bdde3",
+            "94ab5b1c-b51b-429f-a686-fba82acd9f06"
+          ],
+          "to_ref": "C1, C2, C3, C4, C5, C6, C7, D12, D3, D5, D7, D8, D9, P1, P2, P3, Q1, R15, R17, R2, R4, R6, U1, U2, U3, U4, U5, U6"
+        }
+      ],
+      "diameter_inches": 4.0,
+      "end_anchor": "7220cb20-405a-4345-937f-a5b0931faa6f",
+      "end_offset": [
+        0,
+        0
+      ],
+      "faulty": false,
+      "has_end_anchor": false,
+      "has_start_anchor": false,
+      "horizontal_length_ft": 0.0,
+      "max_fill_percent": 40.0,
+      "name": "C-101",
+      "pos_x": 75,
+      "pos_y": 566,
+      "route_layer": -1,
+      "route_points": [],
+      "spec_name": "",
+      "start_anchor": "56450286-455f-4cfa-be48-c4bb2b5ec0bc",
+      "start_offset": [
+        0,
+        0
+      ],
+      "type": 1
+    },
+    {
+      "bend_radius_iu": 0.0,
+      "cables": [
+        {
+          "area_mm2": 506.7074790974977,
+          "from_ref": "P2",
+          "name": "GND",
+          "net_code": 2,
+          "pad_uuids": [
+            "9a28a224-d529-43c3-a5a2-2254f4c1c34e",
+            "b88a19d4-b7e9-4329-b928-a755e0fbcd12",
+            "767ba196-18d6-4400-9540-d6d5216a1db6",
+            "5eb878d4-a2e4-4053-ae89-800d17178eaa",
+            "5a0872ae-7d8f-43c9-9473-53b348854664",
+            "e21f2df1-6823-457b-ba74-aca8b268c30a",
+            "a609ba21-4eba-4c52-8cad-e840ac81d83d",
+            "672c7e20-6dcd-4b1e-af74-c23ab734a2eb",
+            "d7c31a0a-3172-48b2-b7a7-103c25e9cc9f",
+            "64e7deff-e627-4964-9855-70f97f6e85df",
+            "7b1f43f8-7abb-4d2a-b324-17afe0765e8e",
+            "ef300f5f-a698-465c-9c03-4dbe91ed4ab1",
+            "090c2218-db7f-40c7-b56b-d819210558d8",
+            "79e18e18-ca55-4c0f-8fb2-d1c6940ae01a",
+            "a273b0cf-623c-4d6f-b31c-ff9897866902",
+            "01b9f838-6524-41ce-acc5-ed583d630f27",
+            "9d7a5352-e15e-4bc7-be40-6a81969d99da",
+            "ab171a6d-536d-4b9c-a449-5f3d865470d4",
+            "e87d765b-5b8c-4589-8d15-96246dc8529b",
+            "50160666-9b65-4129-8e24-8a0e2c6ff9b7",
+            "7e3d1eea-1cda-4ffa-a78e-0ee0266d3012",
+            "ec7a5a98-5ecd-406e-9f56-576f0b4d7e8f",
+            "72e58fca-d01d-4de2-989b-a8d4496541e7",
+            "7fdfccdb-09bb-4994-98b8-9417776e4444",
+            "564a05f5-bf9f-4a62-bfd1-ae30bd6354d1",
+            "1313139e-cb32-4e2d-8543-a77542971765",
+            "e016e14a-eb39-457f-91ee-45e550175069",
+            "a2387a59-3664-4e32-a26e-0c5f00b73ca4",
+            "4b9a41fa-aa96-4b1b-ad4b-207e36bb7a01",
+            "5b02d01d-2e85-4956-92d9-742764d5232a",
+            "cab31471-1370-4da8-9f26-65e145ea6e49",
+            "8ceb963f-b9bb-4c1a-89a2-8526fdae77ee",
+            "c3b96f46-1ade-4511-87a0-7f4fb65fe6ff",
+            "e0909086-44aa-4d3f-ad6b-3616163cca97",
+            "42c4b821-22b5-451f-9c76-31ccee646782",
+            "4f608163-05ac-4877-918b-f17411efde8d",
+            "0c020ba0-b6e7-4e20-8970-2a3d9eaa3c0d",
+            "cca37e91-7f07-4328-aed3-2f42d3e49ecc",
+            "00bbbb0f-c898-49d4-9524-34f2608bdde3",
+            "94ab5b1c-b51b-429f-a686-fba82acd9f06"
+          ],
+          "to_ref": "C1, C2, C3, C4, C5, C6, C7, D12, D3, D5, D7, D8, D9, J1, P1, P3, Q1, R15, R17, R2, R4, R6, U1, U2, U3, U4, U5, U6"
+        }
+      ],
+      "diameter_inches": 2.0,
+      "end_anchor": "0d923a31-7139-4ff5-a6d8-e4b0fe65fcd5",
+      "end_offset": [
+        0,
+        0
+      ],
+      "faulty": false,
+      "has_end_anchor": false,
+      "has_start_anchor": false,
+      "horizontal_length_ft": 0.0,
+      "max_fill_percent": 40.0,
+      "name": "C-102",
+      "pos_x": 400,
+      "pos_y": 560,
+      "route_layer": -1,
+      "route_points": [],
+      "spec_name": "",
+      "start_anchor": "4c314890-e175-4191-9a7e-954c14ae2b76",
+      "start_offset": [
+        0,
+        0
+      ],
+      "type": 0
+    },
+    {
+      "bend_radius_iu": 0.0,
+      "cables": [],
+      "diameter_inches": 2.0,
+      "end_anchor": "413bd421-e07d-4c90-ae5d-59a41d25b35a",
+      "end_offset": [
+        0,
+        0
+      ],
+      "faulty": false,
+      "has_end_anchor": false,
+      "has_start_anchor": false,
+      "horizontal_length_ft": 0.0,
+      "max_fill_percent": 40.0,
+      "name": "C-104",
+      "pos_x": 73,
+      "pos_y": 922,
+      "route_layer": -1,
+      "route_points": [],
+      "spec_name": "",
+      "start_anchor": "83e646f7-ec5a-4e80-9485-96771de3f5ee",
+      "start_offset": [
+        0,
+        0
+      ],
+      "type": 0
+    },
+    {
+      "bend_radius_iu": 0.0,
+      "cables": [],
+      "diameter_inches": 2.0,
+      "end_anchor": "3ca2a3b7-e39e-4953-bf24-0ced29cd8a76",
+      "end_offset": [
+        0,
+        0
+      ],
+      "faulty": false,
+      "has_end_anchor": false,
+      "has_start_anchor": false,
+      "horizontal_length_ft": 0.0,
+      "max_fill_percent": 40.0,
+      "name": "C-105",
+      "pos_x": 908,
+      "pos_y": 774,
+      "route_layer": -1,
+      "route_points": [],
+      "spec_name": "",
+      "start_anchor": "642e98ee-9304-4fad-8724-9ff66f585187",
+      "start_offset": [
+        0,
+        0
+      ],
+      "type": 0
+    },
+    {
+      "bend_radius_iu": 0.0,
+      "cables": [
+        {
+          "area_mm2": 506.7074790974977,
+          "from_ref": "D1",
+          "name": "Net-(D1-A)",
+          "net_code": 111,
+          "pad_uuids": [
+            "fbd341e0-4e4c-4026-8097-16680c0e9be4",
+            "55ce8845-03f0-453b-b236-0e6e4d6d3cc0"
+          ],
+          "to_ref": "P1"
+        },
+        {
+          "area_mm2": 506.7074790974977,
+          "from_ref": "D1",
+          "name": "Net-(D1-K)",
+          "net_code": 3,
+          "pad_uuids": [
+            "bad06df8-0baa-4909-a369-beaeb7fe2d06",
+            "a9765069-b814-4db5-89b2-bb641bbd4b5f",
+            "02d8db97-fd5a-4a74-8bfa-7aa85744965f"
+          ],
+          "to_ref": "C2, U3"
+        },
+        {
+          "area_mm2": 506.7074790974977,
+          "from_ref": "C1",
+          "name": "GND",
+          "net_code": 2,
+          "pad_uuids": [
+            "9a28a224-d529-43c3-a5a2-2254f4c1c34e",
+            "b88a19d4-b7e9-4329-b928-a755e0fbcd12",
+            "767ba196-18d6-4400-9540-d6d5216a1db6",
+            "5eb878d4-a2e4-4053-ae89-800d17178eaa",
+            "5a0872ae-7d8f-43c9-9473-53b348854664",
+            "e21f2df1-6823-457b-ba74-aca8b268c30a",
+            "a609ba21-4eba-4c52-8cad-e840ac81d83d",
+            "672c7e20-6dcd-4b1e-af74-c23ab734a2eb",
+            "d7c31a0a-3172-48b2-b7a7-103c25e9cc9f",
+            "64e7deff-e627-4964-9855-70f97f6e85df",
+            "7b1f43f8-7abb-4d2a-b324-17afe0765e8e",
+            "ef300f5f-a698-465c-9c03-4dbe91ed4ab1",
+            "090c2218-db7f-40c7-b56b-d819210558d8",
+            "79e18e18-ca55-4c0f-8fb2-d1c6940ae01a",
+            "a273b0cf-623c-4d6f-b31c-ff9897866902",
+            "01b9f838-6524-41ce-acc5-ed583d630f27",
+            "9d7a5352-e15e-4bc7-be40-6a81969d99da",
+            "ab171a6d-536d-4b9c-a449-5f3d865470d4",
+            "e87d765b-5b8c-4589-8d15-96246dc8529b",
+            "50160666-9b65-4129-8e24-8a0e2c6ff9b7",
+            "7e3d1eea-1cda-4ffa-a78e-0ee0266d3012",
+            "ec7a5a98-5ecd-406e-9f56-576f0b4d7e8f",
+            "72e58fca-d01d-4de2-989b-a8d4496541e7",
+            "7fdfccdb-09bb-4994-98b8-9417776e4444",
+            "564a05f5-bf9f-4a62-bfd1-ae30bd6354d1",
+            "1313139e-cb32-4e2d-8543-a77542971765",
+            "e016e14a-eb39-457f-91ee-45e550175069",
+            "a2387a59-3664-4e32-a26e-0c5f00b73ca4",
+            "4b9a41fa-aa96-4b1b-ad4b-207e36bb7a01",
+            "5b02d01d-2e85-4956-92d9-742764d5232a",
+            "cab31471-1370-4da8-9f26-65e145ea6e49",
+            "8ceb963f-b9bb-4c1a-89a2-8526fdae77ee",
+            "c3b96f46-1ade-4511-87a0-7f4fb65fe6ff",
+            "e0909086-44aa-4d3f-ad6b-3616163cca97",
+            "42c4b821-22b5-451f-9c76-31ccee646782",
+            "4f608163-05ac-4877-918b-f17411efde8d",
+            "0c020ba0-b6e7-4e20-8970-2a3d9eaa3c0d",
+            "cca37e91-7f07-4328-aed3-2f42d3e49ecc",
+            "00bbbb0f-c898-49d4-9524-34f2608bdde3",
+            "94ab5b1c-b51b-429f-a686-fba82acd9f06"
+          ],
+          "to_ref": "C2, C3, C4, C5, C6, C7, D12, D3, D5, D7, D8, D9, J1, P1, P2, P3, Q1, R15, R17, R2, R4, R6, U1, U2, U3, U4, U5, U6"
+        }
+      ],
+      "diameter_inches": 2.0,
+      "end_anchor": "2a165548-5d1a-4cfb-baf8-8d2e66487c28",
+      "end_offset": [
+        0,
+        0
+      ],
+      "faulty": false,
+      "has_end_anchor": false,
+      "has_start_anchor": false,
+      "horizontal_length_ft": 0.0,
+      "max_fill_percent": 40.0,
+      "name": "C-107",
+      "pos_x": 76,
+      "pos_y": 748,
+      "route_layer": -1,
+      "route_points": [],
+      "spec_name": "",
+      "start_anchor": "0ce571bf-475f-4dad-ba2e-a11c6de688fc",
+      "start_offset": [
+        0,
+        0
+      ],
+      "type": 0
+    },
+    {
+      "bend_radius_iu": 3000000.0,
+      "cables": [
+        {
+          "area_mm2": 506.7074790974977,
+          "from_ref": "C1",
+          "name": "GND",
+          "net_code": 2,
+          "pad_uuids": [
+            "9a28a224-d529-43c3-a5a2-2254f4c1c34e",
+            "b88a19d4-b7e9-4329-b928-a755e0fbcd12",
+            "767ba196-18d6-4400-9540-d6d5216a1db6",
+            "5eb878d4-a2e4-4053-ae89-800d17178eaa",
+            "5a0872ae-7d8f-43c9-9473-53b348854664",
+            "e21f2df1-6823-457b-ba74-aca8b268c30a",
+            "a609ba21-4eba-4c52-8cad-e840ac81d83d",
+            "672c7e20-6dcd-4b1e-af74-c23ab734a2eb",
+            "d7c31a0a-3172-48b2-b7a7-103c25e9cc9f",
+            "64e7deff-e627-4964-9855-70f97f6e85df",
+            "7b1f43f8-7abb-4d2a-b324-17afe0765e8e",
+            "ef300f5f-a698-465c-9c03-4dbe91ed4ab1",
+            "090c2218-db7f-40c7-b56b-d819210558d8",
+            "79e18e18-ca55-4c0f-8fb2-d1c6940ae01a",
+            "a273b0cf-623c-4d6f-b31c-ff9897866902",
+            "01b9f838-6524-41ce-acc5-ed583d630f27",
+            "9d7a5352-e15e-4bc7-be40-6a81969d99da",
+            "ab171a6d-536d-4b9c-a449-5f3d865470d4",
+            "e87d765b-5b8c-4589-8d15-96246dc8529b",
+            "50160666-9b65-4129-8e24-8a0e2c6ff9b7",
+            "7e3d1eea-1cda-4ffa-a78e-0ee0266d3012",
+            "ec7a5a98-5ecd-406e-9f56-576f0b4d7e8f",
+            "72e58fca-d01d-4de2-989b-a8d4496541e7",
+            "7fdfccdb-09bb-4994-98b8-9417776e4444",
+            "564a05f5-bf9f-4a62-bfd1-ae30bd6354d1",
+            "1313139e-cb32-4e2d-8543-a77542971765",
+            "e016e14a-eb39-457f-91ee-45e550175069",
+            "a2387a59-3664-4e32-a26e-0c5f00b73ca4",
+            "4b9a41fa-aa96-4b1b-ad4b-207e36bb7a01",
+            "5b02d01d-2e85-4956-92d9-742764d5232a",
+            "cab31471-1370-4da8-9f26-65e145ea6e49",
+            "8ceb963f-b9bb-4c1a-89a2-8526fdae77ee",
+            "c3b96f46-1ade-4511-87a0-7f4fb65fe6ff",
+            "e0909086-44aa-4d3f-ad6b-3616163cca97",
+            "42c4b821-22b5-451f-9c76-31ccee646782",
+            "4f608163-05ac-4877-918b-f17411efde8d",
+            "0c020ba0-b6e7-4e20-8970-2a3d9eaa3c0d",
+            "cca37e91-7f07-4328-aed3-2f42d3e49ecc",
+            "00bbbb0f-c898-49d4-9524-34f2608bdde3",
+            "94ab5b1c-b51b-429f-a686-fba82acd9f06"
+          ],
+          "to_ref": "C2, C3, C4, C5, C6, C7, D12, D3, D5, D7, D8, D9, J1, P1, P2, P3, Q1, R15, R17, R2, R4, R6, U1, U2, U3, U4, U5, U6"
+        },
+        {
+          "area_mm2": 506.7074790974977,
+          "from_ref": "C1",
+          "name": "VCC",
+          "net_code": 1,
+          "pad_uuids": [
+            "bd4ffc38-83e7-4835-abdd-88b99ed1abd8",
+            "c4e105b2-1a1c-48bf-aee6-7969fa091e3c",
+            "aceff124-6a49-425d-a2c4-63fb7d76da9b",
+            "53dde18e-e1bd-452e-bbe3-4befd1af9d4f",
+            "a3c0a6cf-0dd0-4e0e-a29d-75f4e0085c40",
+            "5271d1b3-2b1d-4d8a-a411-3bcbd898d101",
+            "62b64405-aac2-4f3d-92df-52474ffef5f1",
+            "a4129832-7ed3-4cfa-b576-149a2af86688",
+            "d39fad1c-34ae-4e8c-bf85-59d1cd790931",
+            "59d3d5fb-39ca-4db0-a611-f1a4882be6fb",
+            "bb4ac81e-79d5-428d-94f0-1f646b500081",
+            "3acb5a29-7227-4ce2-8aa0-d92094ccdfdc"
+          ],
+          "to_ref": "D2, D4, D6, JP1, L1, Q3, R14, R20, U2, U3, U4"
+        }
+      ],
+      "diameter_inches": 4.0,
+      "end_anchor": "00000000-0000-0000-0000-00005a212a55",
+      "end_offset": [
+        -8291163,
+        10450000
+      ],
+      "faulty": false,
+      "has_end_anchor": true,
+      "has_start_anchor": true,
+      "horizontal_length_ft": 70.36714850497843,
+      "max_fill_percent": 40.0,
+      "name": "C-106",
+      "pos_x": 120,
+      "pos_y": 53,
+      "route_layer": 0,
+      "route_points": [
+        [
+          176200000,
+          -5600000
+        ],
+        [
+          215225120,
+          -5600000
+        ],
+        [
+          215225120,
+          -38231135
+        ]
+      ],
+      "spec_name": "4\"PVC",
+      "start_anchor": "00000000-0000-0000-0000-00005a2a01d8",
+      "start_offset": [
+        -8060000,
+        -2230000
+      ],
+      "type": 1
+    }
+  ],
+  "next_conduit_number": 108,
+  "version": 1
+}

@@ -31,6 +31,7 @@
 #include <wx/filedlg.h>
 #include <wx/filename.h>
 #include <wx/richmsgdlg.h>
+#include <wx/tokenzr.h>
 
 #include "conduit/conduit_canvas_panel.h"
 
@@ -322,12 +323,41 @@ void CONDUIT_SCHEMATIC_FRAME::RefreshFromBoard()
 }
 
 
+// Natural-order compare for conduit names like "C-9" < "C-10" < "C-122" < "C-126":
+// split each into a non-digit prefix + trailing number and compare by (prefix, number).
+static bool conduitNameLess( const wxString& a, const wxString& b )
+{
+    auto split = []( const wxString& s, wxString& pre, long& num, bool& has )
+    {
+        int i = (int) s.length();
+        while( i > 0 && wxIsdigit( s.GetChar( i - 1 ) ) )
+            i--;
+        pre = s.Left( i );
+        has = ( i < (int) s.length() );
+        num = 0;
+        if( has )
+            s.Mid( i ).ToLong( &num );
+    };
+
+    wxString pa, pb; long na = 0, nb = 0; bool ha = false, hb = false;
+    split( a, pa, na, ha );
+    split( b, pb, nb, hb );
+
+    if( pa != pb )
+        return pa < pb;
+    if( ha && hb )
+        return na < nb;
+    return a < b;
+}
+
+
 std::vector<wxString> CONDUIT_SCHEMATIC_FRAME::GetConduitNames() const
 {
     std::vector<wxString> out;
     out.reserve( m_conduits.size() );
     for( const std::unique_ptr<CONDUIT>& c : m_conduits )
         out.push_back( c->GetName() );
+    std::sort( out.begin(), out.end(), conduitNameLess );
     return out;
 }
 
@@ -344,7 +374,32 @@ std::vector<wxString> CONDUIT_SCHEMATIC_FRAME::GetRoutableConduitNames() const
         if( !c->GetSpecName().IsEmpty() )
             out.push_back( c->GetName() );
     }
+    std::sort( out.begin(), out.end(), conduitNameLess );
     return out;
+}
+
+
+// Resolve a net's *assigned* class name (highest-priority non-Default constituent of
+// the effective netclass), for matching against m_CableSpecs (keyed by class name).
+static wxString assignedClassName( NET_SETTINGS* aNetSettings, const wxString& aNetName,
+                                   const wxString& aDefaultName )
+{
+    if( !aNetSettings )
+        return aDefaultName;
+
+    std::shared_ptr<NETCLASS> nc = aNetSettings->GetEffectiveNetClass( aNetName );
+    if( !nc )
+        return aDefaultName;
+
+    const std::vector<NETCLASS*>& constituents = nc->GetConstituentNetclasses();
+    if( constituents.empty() )
+        return nc->GetName();
+
+    for( NETCLASS* c : constituents )
+        if( c->GetName() != NETCLASS::Default )
+            return c->GetName();
+
+    return aDefaultName;
 }
 
 
@@ -367,6 +422,7 @@ std::vector<wxString> CONDUIT_SCHEMATIC_FRAME::GetRoutedConduitNames() const
         if( !c->GetSpecName().IsEmpty() && c->GetRoutePoints().size() >= 2 )
             out.push_back( c->GetName() );
     }
+    std::sort( out.begin(), out.end(), conduitNameLess );
     return out;
 }
 
@@ -496,6 +552,25 @@ void CONDUIT_SCHEMATIC_FRAME::RemoveConduitAnchor( const wxString& aConduitName,
 }
 
 
+void CONDUIT_SCHEMATIC_FRAME::EditRoutePointsDialog( const wxString& aConduitName )
+{
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( c->GetName() != aConduitName )
+            continue;
+
+        if( editConduitRoutePoints( c.get() ) )   // dialog already set route + faulty
+        {
+            refreshConduitList();
+            refreshCableList();    // pushes overlay
+            if( !m_filePath.IsEmpty() )
+                saveToFile( m_filePath );
+        }
+        return;
+    }
+}
+
+
 void CONDUIT_SCHEMATIC_FRAME::ClearConduitRoute( const wxString& aConduitName )
 {
     for( const std::unique_ptr<CONDUIT>& c : m_conduits )
@@ -536,10 +611,12 @@ bool CONDUIT_SCHEMATIC_FRAME::UpdateAnchoredEndpoints( BOARD* aBoard )
         bool changed = false;
         bool faulty  = false;
 
-        // Move the anchored endpoint(s) to track the footprint. The far end is held
-        // fixed and all angles preserved (lengths adjust). If the target can't be
-        // reached that way, the conduit is faulty: snap the end to the equipment so
-        // the tether stays connected, but flag it red.
+        // Move the anchored endpoint(s) to track the footprint using the SAME rule as
+        // the route-points editor: move the endpoint, then slide only the nearest
+        // neighbour to keep angles valid. If it can't be made valid → error state.
+        // Snapping is in the local board frame (Site Origin rotation does NOT tilt it).
+        double maxBend = GetConduitMaxBendAngleDeg( c->GetName() );
+
         if( c->HasStartAnchor() )
         {
             if( FOOTPRINT* fp = findFootprintByUuid( aBoard, c->GetStartAnchor() ) )
@@ -548,11 +625,8 @@ bool CONDUIT_SCHEMATIC_FRAME::UpdateAnchoredEndpoints( BOARD* aBoard )
                             fp->GetPosition().y + c->GetStartOffset().y );
                 if( np != pts.front() )
                 {
-                    if( !SolveRoutePreserveAngles( pts, 0, np, /*fixedIsLast*/ true ) )
-                    {
-                        pts.front() = np;
+                    if( !EditRouteNode( pts, 0, np, maxBend, /*siteRotRad*/ 0.0 ) )
                         faulty = true;
-                    }
                     changed = true;
                 }
             }
@@ -565,12 +639,8 @@ bool CONDUIT_SCHEMATIC_FRAME::UpdateAnchoredEndpoints( BOARD* aBoard )
                             fp->GetPosition().y + c->GetEndOffset().y );
                 if( np != pts.back() )
                 {
-                    if( !SolveRoutePreserveAngles( pts, (int) pts.size() - 1, np,
-                                                   /*fixedIsLast*/ false ) )
-                    {
-                        pts.back() = np;
+                    if( !EditRouteNode( pts, (int) pts.size() - 1, np, maxBend, 0.0 ) )
                         faulty = true;
-                    }
                     changed = true;
                 }
             }
@@ -673,6 +743,133 @@ void CONDUIT_SCHEMATIC_FRAME::SetConduitRoute( const wxString& aConduitName, int
 }
 
 
+wxString CONDUIT_SCHEMATIC_FRAME::buildConnectionSummary( const CONDUIT* aConduit ) const
+{
+    std::shared_ptr<NET_SETTINGS> netSettings =
+            const_cast<CONDUIT_SCHEMATIC_FRAME*>( this )->Prj().GetProjectFile().NetSettings();
+
+    wxString defaultClassName = wxT( "Default" );
+    if( netSettings && netSettings->GetDefaultNetclass() )
+        defaultClassName = netSettings->GetDefaultNetclass()->GetName();
+
+    std::set<wxString> refs;
+    std::set<wxString> classes;
+
+    for( const CABLE* cab : aConduit->GetCables() )
+    {
+        auto addRefs = [&]( const wxString& aField )
+        {
+            wxStringTokenizer tok( aField, wxT( "," ) );
+            while( tok.HasMoreTokens() )
+            {
+                wxString r = tok.GetNextToken().Trim().Trim( false );
+                if( !r.IsEmpty() )
+                    refs.insert( r );
+            }
+        };
+        addRefs( cab->GetFromRef() );
+        addRefs( cab->GetToRef() );
+
+        wxString cls = assignedClassName( netSettings.get(), cab->GetName(), defaultClassName );
+        if( !cls.IsEmpty() && cls != defaultClassName )
+            classes.insert( cls );
+    }
+
+    std::vector<wxString> parts( refs.begin(), refs.end() );
+    parts.insert( parts.end(), classes.begin(), classes.end() );
+
+    if( parts.empty() )
+        return aConduit->GetName();
+
+    wxString joined;
+    for( size_t k = 0; k < parts.size(); ++k )
+        joined += ( k ? wxT( " - " ) : wxT( "" ) ) + parts[k];
+
+    return aConduit->GetName() + wxT( " (" ) + joined + wxT( ")" );
+}
+
+
+wxString CONDUIT_SCHEMATIC_FRAME::GetConduitConnectionLabel( const wxString& aConduitName ) const
+{
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( c->GetName() == aConduitName )
+            return buildConnectionSummary( c.get() );
+    }
+    return aConduitName;
+}
+
+
+std::vector<wxPoint> CONDUIT_SCHEMATIC_FRAME::GetConduitTerminationPoints(
+        const wxString& aConduitName, BOARD* aBoard ) const
+{
+    std::vector<wxPoint> out;
+    if( !aBoard )
+        return out;
+
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( c->GetName() != aConduitName )
+            continue;
+
+        for( const CABLE* cab : c->GetCables() )
+        {
+            for( const KIID& id : cab->GetPadIds() )
+            {
+                if( BOARD_ITEM* item = aBoard->ResolveItem( id, /*aAllowNullptr*/ true ) )
+                {
+                    if( item->Type() == PCB_PAD_T )
+                    {
+                        VECTOR2I p = static_cast<PAD*>( item )->GetPosition();
+                        out.emplace_back( p.x, p.y );
+                    }
+                }
+            }
+        }
+        break;
+    }
+    return out;
+}
+
+
+int CONDUIT_SCHEMATIC_FRAME::GetConduitRouteLayer( const wxString& aConduitName ) const
+{
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( c->GetName() == aConduitName )
+            return c->GetRouteLayer();
+    }
+    return -1;
+}
+
+
+wxString CONDUIT_SCHEMATIC_FRAME::GetConduitNetClassName( const wxString& aConduitName ) const
+{
+    std::shared_ptr<NET_SETTINGS> netSettings =
+            const_cast<CONDUIT_SCHEMATIC_FRAME*>( this )->Prj().GetProjectFile().NetSettings();
+
+    wxString defaultClassName = wxT( "Default" );
+    if( netSettings && netSettings->GetDefaultNetclass() )
+        defaultClassName = netSettings->GetDefaultNetclass()->GetName();
+
+    for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
+        if( c->GetName() != aConduitName )
+            continue;
+
+        for( const CABLE* cab : c->GetCables() )
+        {
+            wxString cls = assignedClassName( netSettings.get(), cab->GetName(),
+                                              defaultClassName );
+            if( !cls.IsEmpty() && cls != defaultClassName )
+                return cls;     // first assigned (non-Default) class wins
+        }
+        break;
+    }
+    return wxEmptyString;
+}
+
+
 void CONDUIT_SCHEMATIC_FRAME::refreshConduitList()
 {
     long selected = m_conduitListCtrl->GetNextItem( -1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED );
@@ -683,7 +880,8 @@ void CONDUIT_SCHEMATIC_FRAME::refreshConduitList()
     {
         const CONDUIT* c = m_conduits[i].get();
 
-        long idx = m_conduitListCtrl->InsertItem( static_cast<long>( i ), c->GetName() );
+        long idx = m_conduitListCtrl->InsertItem( static_cast<long>( i ),
+                                                  buildConnectionSummary( c ) );
         m_conduitListCtrl->SetItem( idx, 1, ConduitTypeToString( c->GetType() ) );
         m_conduitListCtrl->SetItem( idx, 2, wxString::Format( wxT( "%.2f" ), c->GetDiameterInches() ) );
         m_conduitListCtrl->SetItem( idx, 3, wxString::Format( wxT( "%zu" ), c->GetCables().size() ) );
@@ -896,15 +1094,9 @@ void CONDUIT_SCHEMATIC_FRAME::syncCablesFromBoard()
             continue;
         }
 
-        // 2. Class-level spec — look up this net's class first
-        wxString className = defaultClassName;
-        if( netSettings )
-        {
-            const auto& assignments = netSettings->GetNetclassLabelAssignments();
-            auto ait = assignments.find( netName );
-            if( ait != assignments.end() && !ait->second.empty() )
-                className = *ait->second.begin();
-        }
+        // 2. Class-level spec — resolve this net's assigned class (honours pattern
+        //    assignments + labels; the composite's GetName() would not match the key).
+        wxString className = assignedClassName( netSettings.get(), netName, defaultClassName );
 
         auto cit = proj.m_CableSpecs.find( className );
         if( cit != proj.m_CableSpecs.end() && cit->second.outer_diameter_in > 0.0 )
@@ -922,9 +1114,16 @@ void CONDUIT_SCHEMATIC_FRAME::syncCablesFromBoard()
     for( const std::unique_ptr<CONDUIT>& c : m_conduits )
         c->SetFilletRadiusIu( GetConduitBendRadiusIu( c->GetName() ) );
 
-    // ---- Cache per-conduit total lengths (uses LayerDepths from project) ----
+    // ---- Cache per-conduit total lengths + total bend angle (uses LayerDepths) ----
     for( const std::unique_ptr<CONDUIT>& c : m_conduits )
+    {
         c->SetCachedTotalLengthFt( c->GetTotalLengthFt( proj.m_LayerDepthsInches ) );
+        c->SetCachedTotalBendDeg( c->GetTotalBendAngleDeg( proj.m_LayerDepthsInches ) );
+
+        int n22 = 0, n45 = 0, n67 = 0, n90 = 0;
+        c->GetBendCounts( proj.m_LayerDepthsInches, n22, n45, n67, n90 );
+        c->SetCachedBendCounts( n22, n45, n67, n90 );
+    }
 
     // ---- Push route geometry to the PCB editor's overlay, if reachable ----
     if( PCB_EDIT_FRAME* pcbFrame = dynamic_cast<PCB_EDIT_FRAME*>( GetParent() ) )
@@ -1402,8 +1601,9 @@ bool CONDUIT_SCHEMATIC_FRAME::editConduitRoutePoints( CONDUIT* aConduit )
     // exists as the interim path to validate the data + overlay pipeline.
 
     wxDialog dlg( this, wxID_ANY, _( "Edit Conduit Route Points" ),
-                  wxDefaultPosition, wxSize( 480, 480 ),
+                  wxDefaultPosition, wxSize( 860, 560 ),
                   wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER );
+    dlg.SetMinSize( wxSize( 860, 480 ) );
 
     wxBoxSizer* outer = new wxBoxSizer( wxVERTICAL );
     outer->Add( new wxStaticText( &dlg, wxID_ANY,
@@ -1435,6 +1635,12 @@ bool CONDUIT_SCHEMATIC_FRAME::editConduitRoutePoints( CONDUIT* aConduit )
     std::vector<wxPoint> pts = aConduit->GetRoutePoints();
     fillList( pts );
 
+    // Constraints for in-place editing. Snap is in the LOCAL board frame, so the
+    // Site Origin rotation is intentionally NOT applied (siteRotRad = 0).
+    double maxBendDeg = GetConduitMaxBendAngleDeg( aConduit->GetName() );
+    double siteRotRad = 0.0;
+    bool   editError  = false;   // last in-place edit left the route in an error state
+
     // Input row + Add button
     wxBoxSizer* inputRow = new wxBoxSizer( wxHORIZONTAL );
     wxTextCtrl* xCtrl = new wxTextCtrl( &dlg, wxID_ANY, wxT( "0" ),
@@ -1442,6 +1648,7 @@ bool CONDUIT_SCHEMATIC_FRAME::editConduitRoutePoints( CONDUIT* aConduit )
     wxTextCtrl* yCtrl = new wxTextCtrl( &dlg, wxID_ANY, wxT( "0" ),
                                         wxDefaultPosition, wxSize( 120, -1 ) );
     wxButton* addBtn    = new wxButton( &dlg, wxID_ANY, _( "Add Point" ) );
+    wxButton* updateBtn = new wxButton( &dlg, wxID_ANY, _( "Update Selected" ) );
     wxButton* removeBtn = new wxButton( &dlg, wxID_ANY, _( "Remove Selected" ) );
     wxButton* clearBtn  = new wxButton( &dlg, wxID_ANY, _( "Clear All" ) );
 
@@ -1452,6 +1659,7 @@ bool CONDUIT_SCHEMATIC_FRAME::editConduitRoutePoints( CONDUIT* aConduit )
                    0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 4 );
     inputRow->Add( yCtrl, 0, wxRIGHT, 8 );
     inputRow->Add( addBtn, 0, wxRIGHT, 4 );
+    inputRow->Add( updateBtn, 0, wxRIGHT, 4 );
     inputRow->Add( removeBtn, 0, wxRIGHT, 4 );
     inputRow->Add( clearBtn, 0 );
     outer->Add( inputRow, 0, wxEXPAND | wxALL, 10 );
@@ -1468,6 +1676,49 @@ bool CONDUIT_SCHEMATIC_FRAME::editConduitRoutePoints( CONDUIT* aConduit )
                 yCtrl->GetValue().ToLong( &y );
                 pts.emplace_back( static_cast<int>( x ), static_cast<int>( y ) );
                 fillList( pts );
+            } );
+
+    // Selecting a row loads its coordinates into the X/Y fields for editing.
+    list->Bind( wxEVT_LIST_ITEM_SELECTED,
+            [&]( wxListEvent& evt )
+            {
+                long sel = evt.GetIndex();
+                if( sel >= 0 && sel < static_cast<long>( pts.size() ) )
+                {
+                    xCtrl->SetValue( wxString::Format( wxT( "%d" ), pts[sel].x ) );
+                    yCtrl->SetValue( wxString::Format( wxT( "%d" ), pts[sel].y ) );
+                }
+            } );
+
+    // Update the selected point in place, then slide neighbours to keep angles valid.
+    updateBtn->Bind( wxEVT_BUTTON,
+            [&]( wxCommandEvent& )
+            {
+                long sel = list->GetNextItem( -1, wxLIST_NEXT_ALL,
+                                              wxLIST_STATE_SELECTED );
+                if( sel < 0 || sel >= static_cast<long>( pts.size() ) )
+                    return;
+
+                long x = 0, y = 0;
+                xCtrl->GetValue().ToLong( &x );
+                yCtrl->GetValue().ToLong( &y );
+
+                bool valid = EditRouteNode( pts, static_cast<int>( sel ),
+                                            wxPoint( static_cast<int>( x ),
+                                                     static_cast<int>( y ) ),
+                                            maxBendDeg, siteRotRad );
+                editError = !valid;
+                fillList( pts );
+
+                if( !valid )
+                {
+                    dlg.SetTitle( _( "Edit Conduit Route Points  —  ERROR: angle "
+                                     "could not be kept valid" ) );
+                }
+                else
+                {
+                    dlg.SetTitle( _( "Edit Conduit Route Points" ) );
+                }
             } );
 
     removeBtn->Bind( wxEVT_BUTTON,
@@ -1493,6 +1744,7 @@ bool CONDUIT_SCHEMATIC_FRAME::editConduitRoutePoints( CONDUIT* aConduit )
         return false;
 
     aConduit->SetRoutePoints( pts );    // also recomputes horizontal length
+    aConduit->SetFaulty( editError );   // error-state if the last edit stayed invalid
     setDirty( true );
     return true;
 }

@@ -49,6 +49,22 @@ public:
     /// Routing requires a spec (it supplies bend radius / clearance / max bend angle).
     std::vector<wxString> GetRoutableConduitNames() const;
 
+    /// Display label for a conduit including its connections + net class, e.g.
+    /// "C-101 (MB1 - MB2 - MV)". Falls back to the bare name if unknown.
+    wxString GetConduitConnectionLabel( const wxString& aConduitName ) const;
+
+    /// Board positions of the pad terminations the conduit's cables attach to, so
+    /// the routing tool can highlight them. Resolved from each cable's pad UUIDs.
+    std::vector<wxPoint> GetConduitTerminationPoints( const wxString& aConduitName,
+                                                      BOARD* aBoard ) const;
+
+    /// The conduit's currently-assigned routing layer (PCB_LAYER_ID), or -1 if none.
+    int GetConduitRouteLayer( const wxString& aConduitName ) const;
+
+    /// The assigned (non-Default) net class of the conduit's circuits, or empty.
+    /// Used to auto-pick the routing layer (a copper layer named to match the class).
+    wxString GetConduitNetClassName( const wxString& aConduitName ) const;
+
     /// Conduits that already have a route (>= 2 points) — the editable set.
     std::vector<wxString> GetRoutedConduitNames() const;
 
@@ -76,6 +92,10 @@ public:
 
     /// Clear a conduit's entire route (points + both anchors). Saves + refreshes.
     void ClearConduitRoute( const wxString& aConduitName );
+
+    /// Open the numeric "Edit Conduit Route Points" dialog for a conduit (callable
+    /// from the Site Layout right-click menu). Saves + refreshes if changed.
+    void EditRoutePointsDialog( const wxString& aConduitName );
 
     /// Collision data for the routing tool. One entry per conduit that already has
     /// a route. Clearance and half-width are pre-computed in board IU.
@@ -119,6 +139,9 @@ private:
 
     void refreshConduitList();
     void refreshCableList();
+
+    /// Build "Name (Equip - Equip - NetClass)" for a conduit from its cables.
+    wxString buildConnectionSummary( const CONDUIT* aConduit ) const;
     void editConduit( CONDUIT* aConduit );
     /// Returns true if the user committed changes (so caller can refresh).
     bool editConduitRoutePoints( CONDUIT* aConduit );

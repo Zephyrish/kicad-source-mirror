@@ -49,6 +49,21 @@ bool SolveRoutePreserveAngles( std::vector<wxPoint>& aPts, int aMovedIdx,
                                const wxPoint& aTarget, bool aFixedIsLast );
 
 
+/**
+ * Move node aIdx to aNewPos, then restore validity by sliding ONLY the immediate
+ * neighbour on each side along its existing segment direction until the segment
+ * toward the edited node lands on the 22.5° grid (local frame, aSiteRotRad) with a
+ * bend within aMaxBendDeg. End nodes (first/last) never move — if an end blocks a
+ * fix, that side is left invalid. Edits aPts in place.
+ *
+ * Returns true if every affected angle is valid; false → the route is in an error
+ * state (an end couldn't move, no valid snap within max-bend, or the edited node's
+ * own bend is too sharp). The caller should flag the conduit faulty.
+ */
+bool EditRouteNode( std::vector<wxPoint>& aPts, int aIdx, const wxPoint& aNewPos,
+                    double aMaxBendDeg, double aSiteRotRad );
+
+
 enum class CONDUIT_TYPE
 {
     EMT,    // Electrical Metallic Tubing
@@ -227,6 +242,32 @@ public:
     double GetCachedTotalLengthFt() const { return m_cachedTotalLengthFt; }
     void   SetCachedTotalLengthFt( double aFt ) { m_cachedTotalLengthFt = aFt; }
 
+    /// Total cumulative bend angle (degrees) the cable is pulled through: the sum of
+    /// deflection angles at every route vertex, PLUS 180° for the two 90° dives from
+    /// the run depth up to the surface at each end (added only if the layer has a
+    /// nonzero depth). Used for pull calcs / export.
+    double GetTotalBendAngleDeg( const std::map<int, double>& aLayerDepthsInches ) const;
+
+    double GetCachedTotalBendDeg() const { return m_cachedTotalBendDeg; }
+    void   SetCachedTotalBendDeg( double aDeg ) { m_cachedTotalBendDeg = aDeg; }
+
+    /// Count the route's bends by type (deflection bucketed to the nearest 22.5°
+    /// increment). The two 90° depth dives are added to n90 when the layer has a
+    /// nonzero depth (mirrors GetTotalBendAngleDeg).
+    void GetBendCounts( const std::map<int, double>& aLayerDepthsInches,
+                        int& aN22, int& aN45, int& aN67, int& aN90 ) const;
+
+    /// Frame caches the bend-type counts so the (project-less) exporter can read them.
+    int  GetCachedBend22() const { return m_cachedBend22; }
+    int  GetCachedBend45() const { return m_cachedBend45; }
+    int  GetCachedBend67() const { return m_cachedBend67; }
+    int  GetCachedBend90() const { return m_cachedBend90; }
+    void SetCachedBendCounts( int aN22, int aN45, int aN67, int aN90 )
+    {
+        m_cachedBend22 = aN22; m_cachedBend45 = aN45;
+        m_cachedBend67 = aN67; m_cachedBend90 = aN90;
+    }
+
     // ---- Equipment anchors (Phase 4.F.4) ----
     // An endpoint can be anchored to a footprint (by UUID). The stored offset is
     // (endpoint − footprint origin) captured at bind time; on a move the endpoint
@@ -280,6 +321,11 @@ private:
     double               m_filletRadiusIu = 0.0;
     double               m_horizontalLengthFt = 0.0;
     double               m_cachedTotalLengthFt = 0.0;   // updated by frame each refresh
+    double               m_cachedTotalBendDeg = 0.0;     // updated by frame each refresh
+    int                  m_cachedBend22 = 0;
+    int                  m_cachedBend45 = 0;
+    int                  m_cachedBend67 = 0;
+    int                  m_cachedBend90 = 0;
     std::vector<wxPoint> m_routePoints;                 // board IU
     std::vector<CABLE*>  m_cables;   // non-owning: cables live in the project model
 

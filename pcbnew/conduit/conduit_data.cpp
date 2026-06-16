@@ -266,6 +266,128 @@ bool SolveRoutePreserveAngles( std::vector<wxPoint>& aPts, int aMovedIdx,
 }
 
 
+bool EditRouteNode( std::vector<wxPoint>& aPts, int k, const wxPoint& aNewPos,
+                    double aMaxBendDeg, double aSiteRotRad )
+{
+    const int n = (int) aPts.size();
+    if( k < 0 || k >= n || n < 2 )
+        return false;
+
+    aPts[k] = aNewPos;
+
+    const double gridStep = M_PI / 8.0;   // 22.5°
+
+    auto localAngle = [&]( double dx, double dy ) { return std::atan2( dy, dx ) - aSiteRotRad; };
+
+    auto angleDiff = [&]( double a, double b )
+    {
+        double d = a - b;
+        while( d >  M_PI ) d -= 2.0 * M_PI;
+        while( d < -M_PI ) d += 2.0 * M_PI;
+        return std::abs( d );
+    };
+
+    auto deflectionDeg = [&]( double ax, double ay, double bx, double by )
+    {
+        double la = std::hypot( ax, ay ), lb = std::hypot( bx, by );
+        if( la < 1.0 || lb < 1.0 )
+            return 0.0;
+        double c = std::clamp( ( ax * bx + ay * by ) / ( la * lb ), -1.0, 1.0 );
+        return std::acos( c ) * 180.0 / M_PI;
+    };
+
+    bool ok = true;
+
+    // Slide neighbour 'm' along the line through 'anchor' in its existing direction
+    // (anchor→m) so segment (m→toward) lands on the grid with bend(at m) ≤ max.
+    auto slideNeighbor = [&]( int m, int anchorIdx, int towardIdx ) -> bool
+    {
+        double Ax = aPts[anchorIdx].x, Ay = aPts[anchorIdx].y;
+        double dx = aPts[m].x - Ax,    dy = aPts[m].y - Ay;
+        double dl = std::hypot( dx, dy );
+        if( dl < 1.0 )
+            return false;
+        dx /= dl; dy /= dl;
+
+        double Kx = aPts[towardIdx].x, Ky = aPts[towardIdx].y;
+        double wx = Kx - Ax,           wy = Ky - Ay;
+        double curAng = localAngle( Kx - aPts[m].x, Ky - aPts[m].y );
+
+        bool   found = false;
+        double bestClose = 1e9, bestX = 0, bestY = 0;
+
+        for( int i = 0; i < 16; ++i )
+        {
+            double g  = i * gridStep + aSiteRotRad;
+            double vx = std::cos( g ), vy = std::sin( g );
+            double det = dx * vy - dy * vx;
+            if( std::abs( det ) < 1e-9 )
+                continue;                           // line parallel to this grid dir
+
+            double t = ( wx * vy - wy * vx ) / det;
+            if( t < 1.0 )
+                continue;                           // keep anchor→m direction (no flip)
+
+            double mx = Ax + dx * t, my = Ay + dy * t;
+            double sx = Kx - mx,     sy = Ky - my;
+            if( std::hypot( sx, sy ) < 1.0 )
+                continue;
+
+            if( deflectionDeg( dx, dy, sx, sy ) > aMaxBendDeg + 1e-6 )
+                continue;                           // bend at m too sharp
+
+            double close = angleDiff( localAngle( sx, sy ), curAng );
+            if( close < bestClose )
+            {
+                bestClose = close; bestX = mx; bestY = my; found = true;
+            }
+        }
+
+        if( found )
+            aPts[m] = wxPoint( KiROUND( bestX ), KiROUND( bestY ) );
+        return found;
+    };
+
+    auto segOnGrid = [&]( int a, int b ) -> bool
+    {
+        double ang = localAngle( aPts[b].x - aPts[a].x, aPts[b].y - aPts[a].y );
+        double snapped = std::round( ang / gridStep ) * gridStep;
+        return angleDiff( ang, snapped ) < ( 0.5 * M_PI / 180.0 );   // within 0.5°
+    };
+
+    // Left neighbour
+    if( k >= 1 )
+    {
+        int m = k - 1;
+        if( m >= 1 )
+            ok &= slideNeighbor( m, m - 1, k );
+        else
+            ok &= segOnGrid( 0, k );                // m is the start end node
+    }
+
+    // Right neighbour
+    if( k <= n - 2 )
+    {
+        int m = k + 1;
+        if( m <= n - 2 )
+            ok &= slideNeighbor( m, m + 1, k );
+        else
+            ok &= segOnGrid( k, n - 1 );            // m is the last end node
+    }
+
+    // Edited node's own bend must also be within max.
+    if( k >= 1 && k <= n - 2 )
+    {
+        double a1x = aPts[k].x - aPts[k - 1].x, a1y = aPts[k].y - aPts[k - 1].y;
+        double a2x = aPts[k + 1].x - aPts[k].x, a2y = aPts[k + 1].y - aPts[k].y;
+        if( deflectionDeg( a1x, a1y, a2x, a2y ) > aMaxBendDeg + 1e-6 )
+            ok = false;
+    }
+
+    return ok;
+}
+
+
 void CONDUIT::recomputeHorizontalFromRoute()
 {
     if( m_routePoints.size() < 2 )
@@ -304,6 +426,79 @@ double CONDUIT::GetTotalLengthFt( const std::map<int, double>& aLayerDepthsInche
     }
 
     return total;
+}
+
+
+double CONDUIT::GetTotalBendAngleDeg( const std::map<int, double>& aLayerDepthsInches ) const
+{
+    double total = 0.0;
+
+    // Sum the deflection at every interior route vertex.
+    for( size_t i = 1; i + 1 < m_routePoints.size(); ++i )
+    {
+        double d1x = m_routePoints[i].x - m_routePoints[i - 1].x;
+        double d1y = m_routePoints[i].y - m_routePoints[i - 1].y;
+        double d2x = m_routePoints[i + 1].x - m_routePoints[i].x;
+        double d2y = m_routePoints[i + 1].y - m_routePoints[i].y;
+
+        double l1 = std::hypot( d1x, d1y ), l2 = std::hypot( d2x, d2y );
+        if( l1 < 1.0 || l2 < 1.0 )
+            continue;
+
+        double c = std::clamp( ( d1x * d2x + d1y * d2y ) / ( l1 * l2 ), -1.0, 1.0 );
+        total += std::acos( c ) * 180.0 / M_PI;     // deflection at this vertex
+    }
+
+    // Two 90° dives (depth → surface) at the ends, only if the layer has depth.
+    if( m_routeLayer >= 0 )
+    {
+        auto it = aLayerDepthsInches.find( m_routeLayer );
+        if( it != aLayerDepthsInches.end() && it->second > 0.0 )
+            total += 180.0;
+    }
+
+    return total;
+}
+
+
+void CONDUIT::GetBendCounts( const std::map<int, double>& aLayerDepthsInches,
+                             int& aN22, int& aN45, int& aN67, int& aN90 ) const
+{
+    aN22 = aN45 = aN67 = aN90 = 0;
+
+    for( size_t i = 1; i + 1 < m_routePoints.size(); ++i )
+    {
+        double d1x = m_routePoints[i].x - m_routePoints[i - 1].x;
+        double d1y = m_routePoints[i].y - m_routePoints[i - 1].y;
+        double d2x = m_routePoints[i + 1].x - m_routePoints[i].x;
+        double d2y = m_routePoints[i + 1].y - m_routePoints[i].y;
+
+        double l1 = std::hypot( d1x, d1y ), l2 = std::hypot( d2x, d2y );
+        if( l1 < 1.0 || l2 < 1.0 )
+            continue;
+
+        double c = std::clamp( ( d1x * d2x + d1y * d2y ) / ( l1 * l2 ), -1.0, 1.0 );
+        double deg = std::acos( c ) * 180.0 / M_PI;
+
+        // Bucket to the nearest 22.5° increment (0 = straight, ignored).
+        int step = (int) std::lround( deg / 22.5 );
+        switch( step )
+        {
+        case 1: aN22++; break;
+        case 2: aN45++; break;
+        case 3: aN67++; break;
+        case 4: aN90++; break;
+        default: break;     // 0 (straight) or >90 (shouldn't happen with snapping)
+        }
+    }
+
+    // The two 90° depth dives count as 90° bends when the layer has a depth.
+    if( m_routeLayer >= 0 )
+    {
+        auto it = aLayerDepthsInches.find( m_routeLayer );
+        if( it != aLayerDepthsInches.end() && it->second > 0.0 )
+            aN90 += 2;
+    }
 }
 
 

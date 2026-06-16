@@ -221,9 +221,13 @@ void CONDUIT_CANVAS_PANEL::drawConduit( wxDC& aDC, const CONDUIT* aConduit,
     const wxColour TEXT_MUTED    ( 120, 120, 120 );
     const wxColour PIN_COLOR     ( 130, 80, 30 );       // brownish pin (eeschema)
     const wxColour ORPHAN_COLOR  ( 200, 50, 50 );
+    const wxColour NO_SPEC_COLOR ( 210, 40, 40 );       // red: conduit has no spec
 
     // ---- Body: pure white rectangle, thin square corners ----
-    aDC.SetPen( wxPen( selected ? SHEET_SELECTED : SHEET_FG, selected ? 2 : 1 ) );
+    // Outline is red when the conduit has no Conduit Spec assigned (blue when selected).
+    const bool     hasSpec   = !aConduit->GetSpecName().IsEmpty();
+    const wxColour outlineFg = hasSpec ? SHEET_FG : NO_SPEC_COLOR;
+    aDC.SetPen( wxPen( selected ? SHEET_SELECTED : outlineFg, ( selected || !hasSpec ) ? 2 : 1 ) );
     aDC.SetBrush( wxBrush( SHEET_BG ) );
     aDC.DrawRectangle( aRect );
 
@@ -363,7 +367,24 @@ void CONDUIT_CANVAS_PANEL::drawConduit( wxDC& aDC, const CONDUIT* aConduit,
                       aRect.x + INNER_PADDING, footerLineY + 2 );
     }
 
-    int fillLineY = footerLineY + 18;   // second footer line
+    // Total bend (second footer line): sum of routing bends + the 2× 90° depth dives.
+    // Red when it exceeds 360° (too many bends to pull the cable through).
+    int    bendLineY = footerLineY + 18;
+    double totalBend = aConduit->GetCachedTotalBendDeg();
+    if( totalBend > 0.0 )
+    {
+        aDC.SetTextForeground( totalBend > 360.0 ? wxColour( 180, 40, 40 )
+                                                 : wxColour( 40, 40, 40 ) );
+        aDC.DrawText( wxString::Format( _( "Bends: %.1f°" ), totalBend ),
+                      aRect.x + INNER_PADDING, bendLineY );
+    }
+    else
+    {
+        aDC.SetTextForeground( wxColour( 130, 130, 130 ) );
+        aDC.DrawText( _( "Bends: —" ), aRect.x + INNER_PADDING, bendLineY );
+    }
+
+    int fillLineY = footerLineY + 36;   // third footer line
 
     if( !aConduit->HasAllCableSizesKnown() )
     {
